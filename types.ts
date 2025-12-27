@@ -19,12 +19,14 @@ export interface AppConfig {
     baseUrl: string;
     model: string;
     systemInstruction: string;
+    apiKey?: string;
   };
   visual: {
     provider: 'modelscope' | 'gemini' | 'openai';
     model: string;
     baseUrl: string;
     useSameKeyAsBrain: boolean;
+    apiKey?: string;
   };
 }
 

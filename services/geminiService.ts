@@ -59,7 +59,7 @@ export const generateMarketingStrategy = async (
 
   if (config.brain.provider === 'gemini') {
     // ALWAYS initialize right before the call to ensure latest API key
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: config.brain.apiKey || '' });
     const parts: any[] = [{ text: promptText }];
 
     input.productImages.forEach((img) => {
@@ -85,7 +85,7 @@ export const generateMarketingStrategy = async (
     return JSON.parse(response.text?.trim() || "{}") as MarketingStrategy;
   } else {
     // Other providers must also use the unified environment key if they don't have their own
-    const authKey = process.env.API_KEY;
+    const authKey = config.brain.apiKey;
     const response = await fetch(`${config.brain.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -115,21 +115,21 @@ export const generateVisual = async (prompt: string, config: AppConfig): Promise
   }
 
   if (config.visual.provider === 'gemini') {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: config.visual.apiKey || '' });
     // Default to gemini-2.5-flash-image, upgrade to gemini-3-pro-image-preview for high-end results
-    const modelName = config.visual.model || 'gemini-3-pro-image-preview'; 
-    
+    const modelName = config.visual.model || 'gemini-3-pro-image-preview';
+
     try {
       const response = await ai.models.generateContent({
         model: modelName,
         contents: {
           parts: [{ text: `High-quality Amazon product marketing visual: ${prompt}. Cinematic lighting, hyper-realistic studio photography.` }]
         },
-        config: { 
-          imageConfig: { 
+        config: {
+          imageConfig: {
             aspectRatio: "1:1",
             imageSize: "1K"
-          } 
+          }
         }
       });
 
@@ -146,7 +146,7 @@ export const generateVisual = async (prompt: string, config: AppConfig): Promise
       throw new Error("图像生成失败。");
     }
   } else {
-    const authKey = process.env.API_KEY;
+    const authKey = config.visual.apiKey;
     const isModelScope = config.visual.provider === 'modelscope';
     const endpoint = isModelScope ? config.visual.baseUrl : `${config.visual.baseUrl}/images/generations`;
 
@@ -166,9 +166,9 @@ export const generateVisual = async (prompt: string, config: AppConfig): Promise
 
     const data = await response.json();
     if (!response.ok) throw new Error(data.error?.message || 'Visual engine request failed');
-    
+
     return data.data?.[0]?.url || data.output?.url || data.images?.[0]?.url || '';
   }
-  
+
   throw new Error("未能生成图像。");
 };
