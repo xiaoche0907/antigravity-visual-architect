@@ -1,0 +1,8 @@
+{
+    "rewrites": [
+        {
+            "source": "/api/proxy/v1/:match*",
+            "destination": "https://dashscope.aliyuncs.com/compatible-mode/v1/:match*"
+        }
+    ]
+}

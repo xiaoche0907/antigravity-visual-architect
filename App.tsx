@@ -447,14 +447,41 @@ const App: React.FC = () => {
                     <div className="grid grid-cols-2 gap-8">
                       <div className="space-y-3">
                         <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">服务提供商 (Provider)</label>
-                        <select value={config.brain.provider} onChange={(e) => setConfig({ ...config, brain: { ...config.brain, provider: e.target.value as BrainProvider } })} className="w-full bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white">
-                          <option value="modelscope">ModelScope (推荐)</option>
+                        <select
+                          value={config.brain.provider}
+                          onChange={(e) => {
+                            const newProvider = e.target.value as BrainProvider;
+                            let newBaseUrl = config.brain.baseUrl;
+                            // Auto-set the universal proxy for ModelScope or Custom
+                            if (newProvider === 'modelscope') {
+                              newBaseUrl = '/api/proxy/v1';
+                            }
+                            setConfig({ ...config, brain: { ...config.brain, provider: newProvider, baseUrl: newBaseUrl } });
+                          }}
+                          className="w-full bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white"
+                        >
+                          <option value="modelscope">Custom / OpenAI Compatible (Universal Proxy)</option>
                           <option value="gemini">Google Gemini</option>
                         </select>
                       </div>
                       <div className="space-y-3">
                         <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">模型名称 (Model ID)</label>
-                        <input type="text" value={config.brain.model} onChange={(e) => setConfig({ ...config, brain: { ...config.brain, model: e.target.value } })} className="w-full bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white" />
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={config.brain.model}
+                            onChange={(e) => setConfig({ ...config, brain: { ...config.brain, model: e.target.value } })}
+                            list="brain-models"
+                            className="w-full bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white placeholder-gray-600"
+                            placeholder="输入或选择模型 (如 qwen-plus)"
+                          />
+                          <datalist id="brain-models">
+                            <option value="qwen-max" />
+                            <option value="qwen-plus" />
+                            <option value="qwen-turbo" />
+                            <option value="qwen-long" />
+                          </datalist>
+                        </div>
                       </div>
                       <div className="space-y-3">
                         <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">API KEY (必填)</label>
@@ -467,68 +494,75 @@ const App: React.FC = () => {
                       </div>
                     </div>
                     <div className="space-y-3">
-                      <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">Base URL</label>
-                      <input type="text" value={config.brain.baseUrl} onChange={(e) => setConfig({ ...config, brain: { ...config.brain, baseUrl: e.target.value } })} className="w-full bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white" />
-                    </div>
-                    <div className="space-y-3">
-                      <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">智能体角色指令 (System Prompt)</label>
-                      <textarea value={config.brain.systemInstruction} onChange={(e) => setConfig({ ...config, brain: { ...config.brain, systemInstruction: e.target.value } })} className="w-full bg-[#131314] border border-[#3c4043] rounded-[24px] p-6 text-sm h-48 outline-none focus:border-[#A8C7FA] mono leading-relaxed text-white" />
+                      <div className="space-y-3">
+                        <div className="flex justify-between">
+                          <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">Base URL</label>
+                          {config.brain.baseUrl.includes('/api/proxy') && (
+                            <span className="text-[9px] text-green-400 font-bold bg-green-900/40 px-2 py-0.5 rounded">✅ Universal Proxy Active</span>
+                          )}
+                        </div>
+                        <input type="text" value={config.brain.baseUrl} onChange={(e) => setConfig({ ...config, brain: { ...config.brain, baseUrl: e.target.value } })} className="w-full bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white" />
+                        <p className="text-[9px] text-gray-600">Default: <span className="font-mono text-gray-400">/api/proxy/v1</span> (For DashScope/Qwen/OpenAI Compatible)</p>
+                      </div>
+                      <div className="space-y-3">
+                        <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">智能体角色指令 (System Prompt)</label>
+                        <textarea value={config.brain.systemInstruction} onChange={(e) => setConfig({ ...config, brain: { ...config.brain, systemInstruction: e.target.value } })} className="w-full bg-[#131314] border border-[#3c4043] rounded-[24px] p-6 text-sm h-48 outline-none focus:border-[#A8C7FA] mono leading-relaxed text-white" />
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Visual Engine Card */}
-                <div className="bg-[#1e1f20] border border-[#3c4043] rounded-[32px] overflow-hidden shadow-2xl">
-                  <div className="p-8 bg-[#2a2a2c] border-b border-[#3c4043] flex items-center justify-between">
-                    <h3 className="font-black text-sm uppercase tracking-tighter flex items-center text-white"><span className="p-2 bg-purple-500/10 text-purple-400 rounded-xl mr-3">🎨</span> 🅱️ 视觉引擎 (图像生成)</h3>
-                  </div>
-                  <div className="p-10 space-y-8">
-                    <div className="grid grid-cols-2 gap-8">
-                      <div className="space-y-3">
-                        <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">提供商</label>
-                        <select value={config.visual.provider} onChange={(e) => setConfig({ ...config, visual: { ...config.visual, provider: e.target.value as any } })} className="w-full bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white">
-                          <option value="modelscope">ModelScope (Wanx)</option>
-                          <option value="gemini">Google Gemini</option>
-                        </select>
-                      </div>
-                      <div className="space-y-3">
-                        <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">模型名称</label>
-                        <input type="text" value={config.visual.model} onChange={(e) => setConfig({ ...config, visual: { ...config.visual, model: e.target.value } })} className="w-full bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white" />
-                      </div>
-                      <div className="space-y-3">
-                        <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">API KEY (必填)</label>
-                        <div className="flex space-x-2">
-                          <input type="password" value={config.visual.apiKey || ''} onChange={(e) => setConfig({ ...config, visual: { ...config.visual, apiKey: e.target.value } })} className="flex-1 bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white" />
-                          <button onClick={handleTestVisual} disabled={testingVisual} className="px-4 rounded-2xl border border-[#3c4043] hover:bg-[#3c4043] transition-all text-white disabled:opacity-50">
-                            {testingVisual ? 'Testing...' : '🔗 Test'}
-                          </button>
+                  {/* Visual Engine Card */}
+                  <div className="bg-[#1e1f20] border border-[#3c4043] rounded-[32px] overflow-hidden shadow-2xl">
+                    <div className="p-8 bg-[#2a2a2c] border-b border-[#3c4043] flex items-center justify-between">
+                      <h3 className="font-black text-sm uppercase tracking-tighter flex items-center text-white"><span className="p-2 bg-purple-500/10 text-purple-400 rounded-xl mr-3">🎨</span> 🅱️ 视觉引擎 (图像生成)</h3>
+                    </div>
+                    <div className="p-10 space-y-8">
+                      <div className="grid grid-cols-2 gap-8">
+                        <div className="space-y-3">
+                          <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">提供商</label>
+                          <select value={config.visual.provider} onChange={(e) => setConfig({ ...config, visual: { ...config.visual, provider: e.target.value as any } })} className="w-full bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white">
+                            <option value="modelscope">ModelScope (Wanx)</option>
+                            <option value="gemini">Google Gemini</option>
+                          </select>
+                        </div>
+                        <div className="space-y-3">
+                          <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">模型名称</label>
+                          <input type="text" value={config.visual.model} onChange={(e) => setConfig({ ...config, visual: { ...config.visual, model: e.target.value } })} className="w-full bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white" />
+                        </div>
+                        <div className="space-y-3">
+                          <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">API KEY (必填)</label>
+                          <div className="flex space-x-2">
+                            <input type="password" value={config.visual.apiKey || ''} onChange={(e) => setConfig({ ...config, visual: { ...config.visual, apiKey: e.target.value } })} className="flex-1 bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white" />
+                            <button onClick={handleTestVisual} disabled={testingVisual} className="px-4 rounded-2xl border border-[#3c4043] hover:bg-[#3c4043] transition-all text-white disabled:opacity-50">
+                              {testingVisual ? 'Testing...' : '🔗 Test'}
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="bg-[#131314] p-6 rounded-2xl border border-[#3c4043] space-y-4">
-                      <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest">🔑 计费与权限说明</p>
-                      <p className="text-xs text-gray-400 leading-relaxed">
-                        使用 Gemini 视觉引擎时，系统将通过官方对话框要求您选择已启用计费的 API Key。
-                        请确保您的项目已配置：<a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="text-[#A8C7FA] underline ml-1">计费文档</a>
-                      </p>
+                      <div className="bg-[#131314] p-6 rounded-2xl border border-[#3c4043] space-y-4">
+                        <p className="text-[10px] text-gray-500 uppercase font-black tracking-widest">🔑 计费与权限说明</p>
+                        <p className="text-xs text-gray-400 leading-relaxed">
+                          使用 Gemini 视觉引擎时，系统将通过官方对话框要求您选择已启用计费的 API Key。
+                          请确保您的项目已配置：<a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="text-[#A8C7FA] underline ml-1">计费文档</a>
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex space-x-4">
-                <div className="flex-1 bg-[#1e1f20] p-10 rounded-3xl border border-dashed border-[#3c4043] text-center">
-                  <button onClick={() => setConfig({ ...config, mockMode: !config.mockMode })} className="px-8 py-3 rounded-full text-xs font-black uppercase tracking-widest border border-[#3c4043] hover:bg-[#3c4043] transition-all text-white">
-                    {config.mockMode ? '切换到真实请求模式' : '切换到模拟演示模式'}
+                <div className="flex space-x-4">
+                  <div className="flex-1 bg-[#1e1f20] p-10 rounded-3xl border border-dashed border-[#3c4043] text-center">
+                    <button onClick={() => setConfig({ ...config, mockMode: !config.mockMode })} className="px-8 py-3 rounded-full text-xs font-black uppercase tracking-widest border border-[#3c4043] hover:bg-[#3c4043] transition-all text-white">
+                      {config.mockMode ? '切换到真实请求模式' : '切换到模拟演示模式'}
+                    </button>
+                    <p className="mt-4 text-[10px] text-gray-500">当前模式: {config.mockMode ? '模拟数据 (无需 Key)' : '真实 AI 生成 (消耗 Token)'}</p>
+                  </div>
+                  <button onClick={handleSaveSettings} className="flex-1 bg-[#A8C7FA] hover:bg-[#d2e3fc] text-[#0b0b0b] rounded-3xl text-sm font-black uppercase tracking-widest shadow-2xl transition-all active:scale-95">
+                    保存并生效配置 (Save & Apply)
                   </button>
-                  <p className="mt-4 text-[10px] text-gray-500">当前模式: {config.mockMode ? '模拟数据 (无需 Key)' : '真实 AI 生成 (消耗 Token)'}</p>
                 </div>
-                <button onClick={handleSaveSettings} className="flex-1 bg-[#A8C7FA] hover:bg-[#d2e3fc] text-[#0b0b0b] rounded-3xl text-sm font-black uppercase tracking-widest shadow-2xl transition-all active:scale-95">
-                  保存并生效配置 (Save & Apply)
-                </button>
               </div>
-            </div>
           </main >
         );
     }
