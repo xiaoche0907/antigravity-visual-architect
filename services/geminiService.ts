@@ -172,3 +172,84 @@ export const generateVisual = async (prompt: string, config: AppConfig): Promise
 
   throw new Error("未能生成图像。");
 };
+
+export const testBrainConnection = async (config: AppConfig): Promise<boolean> => {
+  if (config.mockMode) return true;
+
+  try {
+    if (config.brain.provider === 'gemini') {
+      const ai = new GoogleGenAI({ apiKey: config.brain.apiKey || '' });
+      await ai.models.generateContent({
+        model: config.brain.model || 'gemini-1.5-flash',
+        contents: { parts: [{ text: "Hi" }] }
+      });
+      return true;
+    } else {
+      const authKey = config.brain.apiKey;
+      const response = await fetch(`${config.brain.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authKey}`
+        },
+        body: JSON.stringify({
+          model: config.brain.model,
+          messages: [{ role: 'user', content: 'Hi' }],
+          max_tokens: 5
+        })
+      });
+      if (!response.ok) {
+        const err = await response.text();
+        throw new Error(`HTTP ${response.status}: ${err}`);
+      }
+      return true;
+    }
+  } catch (e) {
+    console.error("Brain connection test failed:", e);
+    throw e;
+  }
+};
+
+export const testVisualConnection = async (config: AppConfig): Promise<boolean> => {
+  if (config.mockMode) return true;
+
+  try {
+    if (config.visual.provider === 'gemini') {
+      const ai = new GoogleGenAI({ apiKey: config.visual.apiKey || '' });
+      // Use a cheap prompt to test key validity
+      await ai.models.generateContent({
+        model: config.visual.model || 'gemini-1.5-flash',
+        contents: { parts: [{ text: "Test connection" }] }
+      });
+      return true;
+    } else {
+      const authKey = config.visual.apiKey;
+      const isModelScope = config.visual.provider === 'modelscope';
+      // For ModelScope/OpenAI compatible image generation, we might not want to waste money generating an image.
+      // But there isn't always a "check key" endpoint.
+      // We will try a very cheap/dry-run request if possible, or sadly specific to the provider.
+      // For compatibility, we might just try to hit the models endpoint if available, or just assume user knows.
+      // A safe bet for OpenAI-like APIs is checking /models.
+
+      const baseUrl = config.visual.baseUrl.replace(/\/images\/generations$/, ''); // strip suffix if user pasted full path
+      // Try listing models as a lightweight check
+      const response = await fetch(`${baseUrl}/models`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authKey}`
+        }
+      });
+
+      // If /models is 404, we might be on a specific endpoint that only accepts POST.
+      // Fallback: If 404/405, we might have to assume it's OK or warn user. 
+      // But if 401/403, it's definitely bad.
+      if (response.status === 401 || response.status === 403) {
+        throw new Error("Invalid API Key (HTTP 401/403)");
+      }
+      return true;
+    }
+  } catch (e) {
+    console.error("Visual connection test failed:", e);
+    throw e;
+  }
+};

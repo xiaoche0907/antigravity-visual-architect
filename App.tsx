@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { WorkflowMode, RoleFocus, ProductInput, MarketingStrategy, AppConfig, BrainProvider } from './types';
-import { generateMarketingStrategy, generateVisual } from './services/geminiService';
+import { generateMarketingStrategy, generateVisual, testBrainConnection, testVisualConnection } from './services/geminiService';
 import { DEFAULT_SYSTEM_INSTRUCTION } from './constants';
 
 const App: React.FC = () => {
@@ -48,6 +48,8 @@ const App: React.FC = () => {
     specs: ''
   });
   const [strategy, setStrategy] = useState<MarketingStrategy | null>(null);
+  const [testingBrain, setTestingBrain] = useState(false);
+  const [testingVisual, setTestingVisual] = useState(false);
 
   const resetBrainInstruction = () => {
     setConfig(prev => ({
@@ -59,6 +61,30 @@ const App: React.FC = () => {
   const handleSaveSettings = () => {
     localStorage.setItem('amz_config_v3', JSON.stringify(config));
     alert("配置已安全保存！\nAPI Key 与系统指令已更新，现在可以直接运行工作流。");
+  };
+
+  const handleTestBrain = async () => {
+    setTestingBrain(true);
+    try {
+      await testBrainConnection(config);
+      alert("✅ Brain Engine 连接成功！\nAPI Key 有效，服务响应正常。");
+    } catch (e: any) {
+      alert(`❌ 连接失败: ${e.message}\n请检查 API Key 或网络设置。`);
+    } finally {
+      setTestingBrain(false);
+    }
+  };
+
+  const handleTestVisual = async () => {
+    setTestingVisual(true);
+    try {
+      await testVisualConnection(config);
+      alert("✅ Visual Engine 连接成功！\nAPI Key 有效。");
+    } catch (e: any) {
+      alert(`❌ 连接失败: ${e.message}\n请检查 API Key 或配置。`);
+    } finally {
+      setTestingVisual(false);
+    }
   };
 
   const handleRunWorkflow = async () => {
@@ -432,7 +458,12 @@ const App: React.FC = () => {
                       </div>
                       <div className="space-y-3">
                         <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">API KEY (必填)</label>
-                        <input type="password" value={config.brain.apiKey || ''} onChange={(e) => setConfig({ ...config, brain: { ...config.brain, apiKey: e.target.value } })} className="w-full bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white" />
+                        <div className="flex space-x-2">
+                          <input type="password" value={config.brain.apiKey || ''} onChange={(e) => setConfig({ ...config, brain: { ...config.brain, apiKey: e.target.value } })} className="flex-1 bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white" />
+                          <button onClick={handleTestBrain} disabled={testingBrain} className="px-4 rounded-2xl border border-[#3c4043] hover:bg-[#3c4043] transition-all text-white disabled:opacity-50">
+                            {testingBrain ? 'Testing...' : '🔗 Test'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-3">
@@ -466,7 +497,12 @@ const App: React.FC = () => {
                       </div>
                       <div className="space-y-3">
                         <label className="text-[10px] text-gray-500 uppercase font-black tracking-widest">API KEY (必填)</label>
-                        <input type="password" value={config.visual.apiKey || ''} onChange={(e) => setConfig({ ...config, visual: { ...config.visual, apiKey: e.target.value } })} className="w-full bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white" />
+                        <div className="flex space-x-2">
+                          <input type="password" value={config.visual.apiKey || ''} onChange={(e) => setConfig({ ...config, visual: { ...config.visual, apiKey: e.target.value } })} className="flex-1 bg-[#131314] border border-[#3c4043] rounded-2xl p-4 text-sm outline-none focus:border-[#A8C7FA] text-white" />
+                          <button onClick={handleTestVisual} disabled={testingVisual} className="px-4 rounded-2xl border border-[#3c4043] hover:bg-[#3c4043] transition-all text-white disabled:opacity-50">
+                            {testingVisual ? 'Testing...' : '🔗 Test'}
+                          </button>
+                        </div>
                       </div>
                     </div>
 
