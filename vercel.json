@@ -1,7 +1,15 @@
 {
     "rewrites": [
         {
-            "source": "/api/proxy/v1/:match*",
+            "source": "/api/proxy/google/:match*",
+            "destination": "https://generativelanguage.googleapis.com/:match*"
+        },
+        {
+            "source": "/api/proxy/openai/:match*",
+            "destination": "https://api.openai.com/v1/:match*"
+        },
+        {
+            "source": "/api/proxy/dashscope/:match*",
             "destination": "https://dashscope.aliyuncs.com/compatible-mode/v1/:match*"
         }
     ]

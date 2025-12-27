@@ -10,7 +10,7 @@ export enum RoleFocus {
   BALANCED = 'BALANCED'
 }
 
-export type BrainProvider = 'modelscope' | 'gemini' | 'openai';
+export type BrainProvider = 'modelscope' | 'google' | 'openai' | 'custom' | 'gemini';
 
 export interface AppConfig {
   mockMode: boolean;
@@ -22,7 +22,7 @@ export interface AppConfig {
     apiKey?: string;
   };
   visual: {
-    provider: 'modelscope' | 'gemini' | 'openai';
+    provider: 'modelscope' | 'google' | 'openai' | 'custom' | 'gemini';
     model: string;
     baseUrl: string;
     useSameKeyAsBrain: boolean;

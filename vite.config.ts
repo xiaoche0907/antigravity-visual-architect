@@ -8,10 +8,20 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api/proxy/v1': {
+      '/api/proxy/google': {
+        target: 'https://generativelanguage.googleapis.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/proxy\/google/, '')
+      },
+      '/api/proxy/openai': {
+        target: 'https://api.openai.com/v1',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/proxy\/openai/, '')
+      },
+      '/api/proxy/dashscope': {
         target: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/proxy\/v1/, '')
+        rewrite: (path) => path.replace(/^\/api\/proxy\/dashscope/, '')
       }
     }
   },
