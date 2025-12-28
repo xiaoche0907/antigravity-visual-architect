@@ -1,118 +1,87 @@
-# Antigravity Visual Architect (Amazon A9 Edition)
+# 🚀 Amazon A9 Visual Architect & Agent Lab (RC-3.0)
 
-![License](https://img.shields.io/badge/license-Private-red.svg)
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
-![Tech Stack](https://img.shields.io/badge/stack-React%20%7C%20Vite%20%7C%20Tailwind-333333.svg)
+> **专为跨境电商设计师打造的 AI 视觉策略与智能体工作台。**
+> 集成了 Amazon A9 算法分析流与高度自由的个人智能体实验室。
 
-**Antigravity Visual Architect** 是一款专为亚马逊跨境电商设计的 AI 视觉营销工作站。它基于 **A9 算法逻辑**，通过双引擎架构（Brain Engine + Visual Engine），将原本耗时数周的视觉策划缩短至分钟级。
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Version](https://img.shields.io/badge/version-3.0.0-green)
+![Tech](https://img.shields.io/badge/tech-React%20%7C%20Vite%20%7C%20Tailwind-purple)
 
-> **核心能力：** 语义分析卖点、生成 5 张高转化副图策略、构建 7 张 A+ 页面叙事架构、自动生成 Midjourney/Nanobanana 提示词。
+## 🌟 核心功能 (Key Features)
+
+### 1. 🧠 Amazon A9 标准作业流 (SOP Workspace)
+专为亚马逊运营与美工设计的标准化工作流：
+- **首席策略官 (Strategy Director)**: 基于 A9 算法拆解产品核心卖点 (USPS)、消费者心理与竞品差异化。
+- **视觉执行官 (Visual Director)**: 自动生成主图、副图、A+ 页面的详细拍摄需求与构图方案。
+- **人设固化**: 支持自定义并自动保存“专家人设”，打造你的专属运营参谋。
+
+### 2. 🧪 智能体实验室 (Agent Lab) [NEW]
+一个全功能的个人 AI 创造中心：
+- **专业级编辑器**: 支持 Markdown 语法高亮、专家提示词模板插入、变量管理。
+- **永久记忆 (Session Persistence)**: 即使关闭浏览器，对话记录与上下文依然保留，随时继续工作。
+- **沉浸式交互**: "配置"与"对话"模式无缝切换，支持多智能体管理与快速清理。
+
+### 3. 🗄️ 模型资产管理 (Model Assets)
+企业级的多模型统一管理中心：
+- **万能兼容**: 原生支持 **Google Gemini**, **OpenAI**, **Anthropic Claude**。
+- **国产大模型支持**: 完美适配 **火山引擎 (豆包/Volcengine)**, **DeepSeek**, **阿里通义千问** 等 OpenAI 兼容接口。
+- **隐私安全**: 所有 API Key 与配置仅存储在本地浏览器 (LocalStorage)，绝不上传至第三方服务器。
 
 ---
 
-## 🏗️ 核心架构 (System Architecture)
+## 🛠️ 技术栈 (Tech Stack)
 
-本项目采用 **双引擎分离 (Dual-Engine Decoupled)** 架构，确保逻辑分析与图像生成的独立性与灵活性。
+本项目采用纯前端架构，零后端成本，部署极简：
 
-* **🧠 Brain Engine (大脑中枢)**
-    * **职责**：负责 USP 拆解、受众画像分析、A+ 文案架构生成。
-    * **核心驱动**：**ModelScope (魔搭/通义千问)** / Gemini Pro。
-    * **特性**：支持自定义 System Prompt（智能体指令），可针对不同类目（3C、户外、家居）进行微调。
-
-* **🎨 Visual Engine (视觉工坊)**
-    * **职责**：负责将文本策略转化为具体的视觉图像参考。
-    * **核心驱动**：**Nanobanana v2 Pro** / Midjourney / Flux。
-    * **特性**：支持多模态输入（产品原图 + 风格参考图）。
+- **Framework**: React 18 + Vite
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Icons**: Lucide React
+- **Storage**: Browser LocalStorage (No Database needed)
+- **Deployment**: Vercel / GitHub Pages
 
 ---
 
-## 🚀 快速开始 (Quick Start)
+## 🚀 快速开始 (Getting Started)
 
-### 1. 环境准备 (Prerequisites)
-* Node.js 18.0 或更高版本
-* Git
-
-### 2. 安装与运行 (Installation)
-
+### 1. 安装依赖
 ```bash
-# 1. 克隆仓库
-git clone [https://github.com/xiaoche0907/antigravity-visual-architect.git](https://github.com/xiaoche0907/antigravity-visual-architect.git)
-
-# 2. 进入目录
-cd antigravity-visual-architect
-
-# 3. 安装依赖 (使用 npm 或 pnpm)
 npm install
+2. 启动开发服务器
+Bash
 
-# 4. 启动本地开发服务器
 npm run dev
-启动后，访问 http://localhost:5173 (Vite 默认端口) 即可看到主界面。
+打开浏览器访问 http://localhost:5173 即可使用。
 
 ⚙️ 配置指南 (Configuration)
-本项目采用 客户端直连 (Client-side API Integration) 模式，无需配置复杂的后端代理。
+添加 API 模型
+点击左侧侧边栏的 “数据库图标” (模型资产)。
 
-启动项目后，点击侧边栏底部的 设置 (Settings) 图标。
+点击 “添加模型”。
 
-配置大脑引擎 (Brain Engine)：
+选择提供商：
 
-选择 ModelScope (OpenAI Compatible)。
+Google Gemini: 填入 API Key 即可。
 
-填入 API Key (sk-...)。
+OpenAI / Custom: 支持所有兼容 OpenAI 协议的中转站。
 
-可选：自定义 System Prompt 以调整分析风格。
+火山引擎 (Volcengine): 系统会自动填充 api/v3 路径，仅需填入 Key 和 Endpoint ID。
 
-配置视觉引擎 (Visual Engine)：
+创建智能体
+点击左侧 “星星图标” (智能体实验室)。
 
-选择 Nanobanana v2 Pro。
+点击 “创建智能体”，使用左侧编辑器编写 System Prompt（支持插入模板）。
 
-填入 API Key。
+点击 “保存并开始对话” 即可进入沉浸式聊天。
 
-提示：勾选 "Link Keys" 可共用 ModelScope 生态密钥。
+🔒 隐私声明 (Privacy)
+本项目为 纯客户端应用 (Client-Side Only)。
 
-安全提示：所有 API Key 仅存储在您浏览器的 localStorage 中，不会上传至任何服务器，确保数据隐私安全。
+您的 API Key、聊天记录、智能体配置 全部存储在您自己的浏览器缓存 (LocalStorage) 中。
 
-📖 使用流程 (Workflow)
-Context Input (投喂素材)：
+没有任何数据会被发送到我们的服务器（因为根本没有服务器）。
 
-在左侧上传 产品多角度原图（建立 3D 认知）。
+请勿在公共电脑上使用，或在使用后及时清理浏览器缓存。
 
-上传 风格参考图（定义调性）。
-
-输入核心卖点 (USP) 和目标受众。
-
-Strategy Generation (策略生成)：
-
-点击 "Generate" 按钮，AI 将并行处理文本逻辑与视觉构思。
-
-Review & Refine (审阅与交付)：
-
-Tab 1 (Secondary Images)：查看 5 张副图的场景构建与提示词。
-
-Tab 2 (A+ Content)：查看详情页的模块化布局建议。
-
-📦 部署指南 (Deployment)
-本项目完全兼容静态部署，推荐使用 Vercel 或 Netlify 进行一键托管。
-
-Vercel 部署 (推荐)
-登录 Vercel Dashboard。
-
-点击 "Add New Project" -> "Import from GitHub"。
-
-选择本项目仓库 antigravity-visual-architect。
-
-Build Command 保持默认 (vite build 或 npm run build)。
-
-Output Directory 保持默认 (dist)。
-
-点击 Deploy。
-
-部署完成后，您将获得一个永久的 HTTPS 访问链接，可分享给团队成员使用。
-
-🛠️ 技术栈 (Tech Stack)
-Framework: React 18 + TypeScript
-
-Build Tool: Vite
-
-Styling: Tailwind CSS + Lucide Icons
-
-AI Integration: OpenAI SDK (Adapters for ModelScope/Gemini)
+📝 License
+MIT License © 2025 Amazon A9 Visual Architect
