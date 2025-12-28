@@ -60,4 +60,33 @@ export interface MarketingStrategy {
   analysis: string;
   secondaryImages: SecondaryImagePlan[];
   aPlusContent: APlusModulePlan[];
+  // Error Handling Fields
+  isError?: boolean;
+  errorMessage?: string;
+  rawResponse?: string;
+}
+
+export interface HistorySession {
+  id: string;
+  timestamp: number;
+  title: string;
+  thumbnail?: string;
+  input: ProductInput;
+  strategy: MarketingStrategy | null;
+  mode: WorkflowMode;
+  roleFocus: RoleFocus;
+}
+
+/**
+ * 个人智能体配置
+ * 用于"我的智能体"功能，允许用户创建自定义的通用智能体
+ */
+export interface PersonalAgent {
+  id: string;
+  name: string;
+  avatar: string; // emoji 字符
+  modelId: string; // 关联的 ModelConfig.id
+  systemPrompt: string;
+  createdAt: number;
+  updatedAt: number;
 }
