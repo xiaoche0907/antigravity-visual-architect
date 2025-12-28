@@ -219,18 +219,49 @@ export const generateMarketingStrategy = async (
 
 export const generateVisual = async (prompt: string, imageModel: ModelConfig | null, config: AppConfig): Promise<string> => {
     if (config.mockMode) return `https://picsum.photos/seed/${Math.floor(Math.random() * 1000)}/1024/1024`;
-    if (!imageModel) throw new Error("无图像模型");
+
+    // 🛡️ 防御性检查：确保传入的是图像模型
+    if (!imageModel) {
+        console.error('❌ [generateVisual] 未提供图像模型配置');
+        throw new Error("无图像模型");
+    }
+
+    // 🛡️ 关键防御：检查模型类别，防止误用文本模型
+    if (imageModel.category !== 'image') {
+        console.error('❌ [generateVisual] 错误：尝试使用非图像模型生成图片', {
+            modelId: imageModel.id,
+            modelName: imageModel.name,
+            category: imageModel.category,
+            expectedCategory: 'image'
+        });
+        throw new Error(`模型类别错误：${imageModel.name} 是 ${imageModel.category} 模型，不能用于图像生成`);
+    }
+
+    console.log('🎨 [generateVisual] 开始生成图像', {
+        model: imageModel.name,
+        provider: imageModel.provider,
+        promptLength: prompt.length
+    });
 
     try {
         if (imageModel.provider === 'google') {
             // Placeholder for Google Imagen as current SDK usage is text-centric or requires specific beta endpoints
+            console.warn('⚠️ [generateVisual] Google Imagen 暂不支持，返回占位图');
             return "https://via.placeholder.com/1024?text=Google+Imagen+Placeholder";
         }
 
-        const endpoint = imageModel.provider === 'aliyun' ? imageModel.baseUrl : `${imageModel.baseUrl}/images/generations`;
+        const endpoint = imageModel.provider === 'aliyun'
+            ? imageModel.baseUrl
+            : `${imageModel.baseUrl}/images/generations`;
+
+        console.log(`📡 [generateVisual] 调用 ${imageModel.provider} API:`, endpoint);
+
         const res = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${imageModel.apiKey}`, 'Content-Type': 'application/json' },
+            headers: {
+                'Authorization': `Bearer ${imageModel.apiKey}`,
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({
                 model: imageModel.modelId,
                 prompt,
@@ -238,10 +269,22 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
                 size: "1024x1024"
             })
         });
+
+        if (!res.ok) {
+            const errorText = await res.text();
+            console.error(`❌ [generateVisual] API 错误 (${res.status}):`, errorText);
+            throw new Error(`图像生成 API 错误 (${res.status}): ${errorText}`);
+        }
+
         const data = await res.json();
-        return data.data?.[0]?.url || data.output?.url || "https://via.placeholder.com/1024?text=Generation+Failed";
-    } catch (e) {
-        return "https://via.placeholder.com/1024?text=Error";
+        const imageUrl = data.data?.[0]?.url || data.output?.url || "https://via.placeholder.com/1024?text=Generation+Failed";
+
+        console.log('✅ [generateVisual] 图像生成成功:', imageUrl.substring(0, 80) + '...');
+        return imageUrl;
+
+    } catch (e: any) {
+        console.error('❌ [generateVisual] 图像生成异常:', e);
+        throw new Error(`图像生成失败: ${e.message}`);
     }
 };
 

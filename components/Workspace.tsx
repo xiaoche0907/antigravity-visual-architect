@@ -84,47 +84,60 @@ const Workspace: React.FC<WorkspaceProps> = ({
             return;
         }
 
-        // ✅ 验证文本模型配置
-        const textModel = modelConfigs.find(m => m.id === selectedBrainModelId);
-        console.log('🔧 [Workspace] 当前选择的文本模型:', textModel ? {
-            id: textModel.id,
-            name: textModel.name,
-            provider: textModel.provider,
-            modelId: textModel.modelId
-        } : '未选择');
+        // ✅ 验证文本模型配置（首席策略官）
+        const brainConfig = modelConfigs.find(m => m.id === selectedBrainModelId);
+        console.log('🧠 [Workspace] 首席策略官（文本模型）:', brainConfig ? {
+            id: brainConfig.id,
+            name: brainConfig.name,
+            provider: brainConfig.provider,
+            modelId: brainConfig.modelId
+        } : '❌ 未选择');
 
-        if (!config.mockMode && !textModel) {
-            alert("⚠️ 请先在 AI 员工页面选择有效的文本模型！");
+        if (!config.mockMode && !brainConfig) {
+            alert("⚠️ 请先在 AI 员工页面选择有效的文本模型（首席策略官）！");
             return;
+        }
+
+        // ✅ 验证图像模型配置（视觉执行官）- 仅在同步生图模式下需要
+        const visualConfig = modelConfigs.find(m => m.id === selectedVisualModelId);
+        if (mode === WorkflowMode.DIRECT_GENERATION && !config.mockMode && !visualConfig) {
+            console.warn('⚠️ [Workspace] 同步生图模式下未选择图像模型');
+            showToast('⚠️ 同步生图模式需要选择图像模型（视觉执行官）');
         }
 
         setLoadingState('analyzing');
         setStrategy(null);
 
         try {
-            console.log('🚀 [Workspace] 开始调用 generateMarketingStrategy');
-            const result = await generateMarketingStrategy(input, roleFocus, textModel || null, config);
-            console.log('✅ [Workspace] 策略生成完成:', result ? '有数据' : '无数据');
+            // 🔥 第一步：大脑思考（文本模型生成策略）
+            console.log('🚀 [Workflow Step 1] 首席策略官开始分析...');
+            const strategyData = await generateMarketingStrategy(input, roleFocus, brainConfig || null, config);
+            console.log('✅ [Workflow Step 1] 策略生成完成');
 
             // 🛡️ 数据验证：确保返回的数据结构完整
-            if (!result) {
+            if (!strategyData) {
                 console.error('❌ [Workspace] 返回结果为 null/undefined');
                 showToast('❌ 分析失败：服务未返回有效数据');
                 setLoadingState('idle');
                 return;
             }
 
-            if (!result.analysis) {
+            if (!strategyData.analysis) {
                 console.warn('⚠️ [Workspace] 返回结果缺少 analysis 字段');
             }
 
-            setStrategy(result);
+            // 🔥 第二步：判断是否需要同步生图（直接生成模式）
+            if (mode === WorkflowMode.DIRECT_GENERATION) {
+                console.log('🎨 [Workflow Step 2] 进入同步生图模式');
+                setLoadingState('generating');
+
+                // 生成所有副图和 A+ 内容的图片
+                await handleGenerateAllImages(strategyData);
+            }
+
+            setStrategy(strategyData);
             showToast('✅ 策略生成成功！');
 
-            if (mode === WorkflowMode.DIRECT_GENERATION) {
-                setLoadingState('generating');
-                await handleGenerateAllImages(result);
-            }
         } catch (error: any) {
             // 🛡️ 错误处理：确保不会黑屏
             console.error("❌ [Workspace] 工作流运行错误:", error);
@@ -147,21 +160,51 @@ const Workspace: React.FC<WorkspaceProps> = ({
     };
 
     const handleGenerateAllImages = async (currentStrategy: MarketingStrategy) => {
-        const imageModel = modelConfigs.find(m => m.id === selectedVisualModelId);
+        // 🎨 视觉执行官（图像模型）
+        const visualConfig = modelConfigs.find(m => m.id === selectedVisualModelId);
+
+        if (!config.mockMode && !visualConfig) {
+            console.error('❌ [handleGenerateAllImages] 未配置图像模型');
+            showToast('⚠️ 无法生成图片：未选择图像模型');
+            return;
+        }
+
+        console.log('🎨 [Workspace] 视觉执行官（图像模型）:', visualConfig ? {
+            id: visualConfig.id,
+            name: visualConfig.name,
+            category: visualConfig.category
+        } : 'Mock 模式');
+
         const updated = { ...currentStrategy };
+
         try {
+            // 生成副图
+            console.log(`🖼️ [Image Generation] 开始生成 ${updated.secondaryImages.length} 张副图...`);
             for (let i = 0; i < updated.secondaryImages.length; i++) {
-                const url = await generateVisual(updated.secondaryImages[i].visualPrompt, imageModel || null, config);
+                console.log(`  📸 [${i + 1}/${updated.secondaryImages.length}] 正在生成: ${updated.secondaryImages[i].type}`);
+                const prompt = updated.secondaryImages[i].visualPrompt;
+                const url = await generateVisual(prompt, visualConfig || null, config);
                 updated.secondaryImages[i].generatedImageUrl = url;
-                setStrategy({ ...updated });
+                setStrategy({ ...updated }); // 实时更新 UI
             }
+
+            // 生成 A+ 内容图片
+            console.log(`📑 [Image Generation] 开始生成 ${updated.aPlusContent.length} 张 A+ 图片...`);
             for (let i = 0; i < updated.aPlusContent.length; i++) {
-                const url = await generateVisual(updated.aPlusContent[i].visualGuidance, imageModel || null, config);
+                console.log(`  📄 [${i + 1}/${updated.aPlusContent.length}] 正在生成: ${updated.aPlusContent[i].moduleType}`);
+                const guidance = updated.aPlusContent[i].visualGuidance;
+                const url = await generateVisual(guidance, visualConfig || null, config);
                 updated.aPlusContent[i].generatedImageUrl = url;
-                setStrategy({ ...updated });
+                setStrategy({ ...updated }); // 实时更新 UI
             }
+
+            console.log('✅ [Image Generation] 所有图片生成完成');
+            showToast('✨ 图片生成完成！');
+
         } catch (error: any) {
-            console.error("Image generation failed:", error);
+            console.error("❌ [Image Generation] 图片生成失败:", error);
+            showToast(`❌ 图片生成失败: ${error.message}`);
+            // 不抛出错误，保留已生成的策略文本
         }
     };
 
