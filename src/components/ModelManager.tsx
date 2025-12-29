@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { ModelConfig, ModelCategory } from '../types/models';
-import { verifyModelConnection } from '../services/aiService';
-import ModelEditForm from './ModelEditForm';
+import React, { useState } from 'react';
+import { ModelConfig, ModelCategory } from '@/types/models';
+import ModelEditForm from '@/components/ModelEditForm';
+import { fetchAvailableModels } from '@/services/aiService';
 
 interface ModelManagerProps {
     models: ModelConfig[];
@@ -33,18 +33,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ models, onModelsChange }) =
         setIsFormOpen(true);
     };
 
-    const handleSaveModel = (config: ModelConfig) => {
-        const existingIndex = models.findIndex(m => m.id === config.id);
+    const handleSaveModel = (newM: ModelConfig) => {
+        const existingIndex = models.findIndex(m => m.id === newM.id);
         let updatedModels: ModelConfig[];
 
         if (existingIndex >= 0) {
             // 编辑现有模型
             updatedModels = [...models];
-            updatedModels[existingIndex] = config;
+            updatedModels[existingIndex] = newM;
             showToast('✅ 模型配置已更新');
         } else {
             // 添加新模型
-            updatedModels = [...models, config];
+            updatedModels = [...models, newM];
             showToast('✅ 模型已添加成功');
         }
 
@@ -72,17 +72,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ models, onModelsChange }) =
         setTestingModelId(model.id);
 
         try {
-            // 这里调用实际的测试连接API
-            // 临时使用模拟延迟
-            // 这里调用实际的测试连接API
-            const result = await verifyModelConnection(model);
-            if (result.success) {
-                showToast(`✅ ${model.name} 连接成功`);
-            } else {
-                showToast(`❌ 连接失败: ${result.msg}`);
-            }
+            // 使用 aiService 进行真实连接测试
+            // 注意：这里只验证模型列表是否可拉取，作为连通性测试
+            await fetchAvailableModels(
+                model.provider as any,
+                model.baseUrl,
+                model.apiKey
+            );
+
+            showToast(`✅ ${model.name} 连接成功 (Service OK)`);
         } catch (error: any) {
-            showToast(`❌ 连接失败: ${error.message}`);
+            console.error("Connection Test Failed:", error);
+            // 简单的 Mock 回退机制，如果 API 不支持 list models 或者是 mock 模式
+            if (model.id.includes('mock')) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                showToast(`✅ ${model.name} (Mock) 连接正常`);
+            } else {
+                showToast(`❌ 连接失败: ${error.message}`);
+            }
         } finally {
             setTestingModelId(null);
         }

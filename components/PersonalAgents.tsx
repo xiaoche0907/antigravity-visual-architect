@@ -37,6 +37,7 @@ const EXPERT_TEMPLATE = `# Role: [角色名称]
 interface ChatMessage {
     role: 'user' | 'assistant' | 'error';
     content: string;
+    attachments?: string[];
     timestamp: number;
 }
 
@@ -110,6 +111,10 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
     const [isGenerating, setIsGenerating] = useState<boolean>(false);
     const [previewExpanded, setPreviewExpanded] = useState<boolean>(false);
 
+    // 📎 附件状态
+    const [attachments, setAttachments] = useState<string[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
     // 防抖状态：用于预览区渲染
     const [debouncedPrompt, setDebouncedPrompt] = useState<string>('');
     const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -162,6 +167,7 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
                     setChatMessages([]);
                 }
                 setUserInput('');
+                setAttachments([]); // 清空附件
                 prevAgentIdRef.current = selectedAgent.id;
             }
         }
@@ -184,6 +190,7 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
         setTimeout(() => setToastMessage(null), 3000);
     }, []);
 
+    // ... (keep create/delete handlers) ... 
     const handleCreateAgent = useCallback(() => {
         const newAgent: PersonalAgent = {
             id: `agent_${Date.now()}`,
@@ -263,15 +270,39 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
         setChatMessages([]);
         setViewMode('edit');
         setUserInput('');
+        setAttachments([]);
 
         showToast('🗑️ 会话已清除');
     }, [selectedAgent, showToast]);
 
+    // 📎 文件处理逻辑
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files) return;
+
+        Array.from(files).forEach(file => {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                if (ev.target?.result) {
+                    setAttachments(prev => [...prev, ev.target!.result as string]);
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Reset input for continuous upload
+        e.target.value = '';
+    };
+
+    const removeAttachment = (index: number) => {
+        setAttachments(prev => prev.filter((_, i) => i !== index));
+    };
+
     // 核心聊天逻辑
     const handleSendMessage = useCallback(async () => {
-        if (!userInput.trim()) return;
+        if (!userInput.trim() && attachments.length === 0) return;
 
-        const currentModelId = editingModelId; // 使用当前编辑器的状态，不一定非要保存
+        const currentModelId = editingModelId;
         const currentSystemPrompt = editingPrompt;
 
         if (!currentModelId) {
@@ -288,10 +319,17 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
         // 替换变量
         const finalSystemPrompt = currentSystemPrompt.replace(/\{\{user_input\}\}/g, userInput);
 
-        // 添加用户消息
-        const userMsg: ChatMessage = { role: 'user', content: userInput, timestamp: Date.now() };
+        // 添加用户消息 (包含图片)
+        const userMsg: ChatMessage = {
+            role: 'user',
+            content: userInput,
+            attachments: [...attachments], // Save snapshot of current attachments
+            timestamp: Date.now()
+        };
+
         setChatMessages(prev => [...prev, userMsg]);
         setUserInput('');
+        setAttachments([]); // Clear UI state immediately
         setIsGenerating(true);
 
         try {
@@ -299,21 +337,58 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
 
             if (selectedModel.provider === 'google') {
                 const ai = new GoogleGenAI({ apiKey: selectedModel.apiKey });
+
+                // Construct Google Parts
+                const parts: any[] = [];
+                if (userInput.trim()) {
+                    parts.push({ text: userInput });
+                }
+                // Add images
+                userMsg.attachments?.forEach(img => {
+                    // Extract base64 info: data:image/jpeg;base64,....
+                    const matches = img.match(/^data:(.+);base64,(.+)$/);
+                    if (matches) {
+                        parts.push({
+                            inlineData: {
+                                mimeType: matches[1],
+                                data: matches[2]
+                            }
+                        });
+                    }
+                });
+
                 const response = await ai.models.generateContent({
                     model: selectedModel.modelId,
-                    contents: { parts: [{ text: userInput }] }, // 注意：这里使用了原始 userInput，因为 systemPrompt 已经处理了上下文逻辑
+                    contents: { parts },
                     config: { systemInstruction: finalSystemPrompt }
                 });
                 responseText = response.text?.trim() || '[空响应]';
+
             } else {
                 // OpenAI Compatible
                 const endpoint = selectedModel.baseUrl.endsWith('/chat/completions')
                     ? selectedModel.baseUrl
                     : `${selectedModel.baseUrl.replace(/\/$/, '')}/chat/completions`;
 
+                // Construct OpenAI Messages
+                let messageContent: any = userInput;
+
+                if (userMsg.attachments && userMsg.attachments.length > 0) {
+                    messageContent = [];
+                    if (userInput.trim()) {
+                        messageContent.push({ type: 'text', text: userInput });
+                    }
+                    userMsg.attachments.forEach(img => {
+                        messageContent.push({
+                            type: 'image_url',
+                            image_url: { url: img }
+                        });
+                    });
+                }
+
                 const messages = [
                     { role: 'system', content: finalSystemPrompt },
-                    { role: 'user', content: userInput }
+                    { role: 'user', content: messageContent }
                 ];
 
                 const res = await fetch(endpoint, {
@@ -342,9 +417,9 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
         } finally {
             setIsGenerating(false);
         }
-    }, [userInput, editingModelId, editingPrompt, modelConfigs]);
+    }, [userInput, attachments, editingModelId, editingPrompt, modelConfigs]);
 
-    // --- 渲染函数：编辑器模式 (使用 useMemo 优化) ---
+    // ... (RenderEditor stays mostly same) ...
     const RenderEditor = useMemo(() => (
         <div className="flex flex-col h-full bg-[#0b0b0b] animate-in fade-in zoom-in-95 duration-200">
             {/* 顶部元数据行 */}
@@ -497,15 +572,28 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
                 ) : (
                     chatMessages.map((msg, i) => (
                         <div key={i} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[850px] flex gap-4 p-6 rounded-xl ${msg.role === 'user' ? 'bg-[#343541]' : 'w-full bg-[#444654] border border-black/10'}`}>
+                            <div className={`max-w-[850px] flex gap-4 p-6 rounded-xl ${msg.role === 'user' ? 'bg-[#343541] flex-row-reverse' : 'w-full bg-[#444654] border border-black/10'}`}>
                                 <div className="text-2xl pt-1 shrink-0">
                                     {msg.role === 'user' ? '👤' : editingAvatar}
                                 </div>
                                 <div className="prose prose-invert max-w-none flex-1">
-                                    <div className="whitespace-pre-wrap text-gray-100 leading-7 text-[15px]">
+                                    {/* 显示用户发送的图片 */}
+                                    {msg.attachments && msg.attachments.length > 0 && (
+                                        <div className={`flex flex-wrap gap-2 mb-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                                            {msg.attachments.map((img, idx) => (
+                                                <img
+                                                    key={idx}
+                                                    src={img}
+                                                    className="max-h-64 rounded-lg border border-white/10"
+                                                    alt="Upload"
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className={`whitespace-pre-wrap text-gray-100 leading-7 text-[15px] ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
                                         {msg.content}
                                     </div>
-                                    <div className="text-[10px] text-gray-500 mt-2 font-mono">
+                                    <div className={`text-[10px] text-gray-500 mt-2 font-mono ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
                                         {new Date(msg.timestamp).toLocaleTimeString()}
                                     </div>
                                 </div>
@@ -527,39 +615,79 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
                     </div>
                 )}
                 {/* 底部垫一下，防止输入框遮挡 */}
-                <div className="h-32"></div>
+                <div className="h-40"></div>
             </div>
 
             {/* 输入区域 */}
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#343541] via-[#343541] to-transparent pt-10 pb-8 px-4">
-                <div className="max-w-3xl mx-auto relative cursor-text">
-                    <textarea
-                        value={userInput}
-                        onChange={e => setUserInput(e.target.value)}
-                        onKeyDown={e => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSendMessage();
-                            }
-                        }}
-                        disabled={isGenerating}
-                        placeholder={`Send a message to ${editingName}...`}
-                        className="w-full bg-[#40414f] text-white rounded-xl shadow-2xl border border-black/20 pl-4 pr-12 py-4 max-h-48 min-h-[56px] resize-none outline-none focus:ring-1 focus:ring-gray-500/50 custom-scrollbar"
-                        style={{ boxShadow: '0 0 15px rgba(0,0,0,0.1)' }}
-                        rows={1}
-                    />
-                    <button
-                        onClick={handleSendMessage}
-                        disabled={!userInput.trim() || isGenerating}
-                        className={`absolute right-3 bottom-3 p-2 rounded-md transition-colors ${!userInput.trim() ? 'bg-transparent text-gray-500 cursor-default' : 'bg-[#19c37d] text-white hover:bg-[#1a885d]'}`}
-                    >
-                        <svg stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                    </button>
+                <div className="max-w-3xl mx-auto relative cursor-text bg-[#40414f] rounded-xl shadow-2xl border border-black/20 overflow-hidden">
+                    {/* 附件预览区 */}
+                    {attachments.length > 0 && (
+                        <div className="flex gap-3 p-3 border-b border-black/10 overflow-x-auto custom-scrollbar bg-[#383945]">
+                            {attachments.map((img, idx) => (
+                                <div key={idx} className="relative flex-shrink-0 group">
+                                    <img src={img} className="h-16 w-16 object-cover rounded-lg border border-white/20" alt="preview" />
+                                    <button
+                                        onClick={() => removeAttachment(idx)}
+                                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="flex items-end pl-2">
+                        {/* 文件上传按钮 */}
+                        <div className="pb-3 text-gray-400 hover:text-white transition-colors">
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                className="p-2 rounded-lg hover:bg-black/20"
+                                title="上传图片"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                            </button>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                className="hidden"
+                                onChange={handleFileSelect}
+                            />
+                        </div>
+
+                        <textarea
+                            value={userInput}
+                            onChange={e => setUserInput(e.target.value)}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleSendMessage();
+                                }
+                            }}
+                            disabled={isGenerating}
+                            placeholder={`Send a message to ${editingName}...`}
+                            className="flex-1 bg-transparent text-white border-0 focus:ring-0 py-4 px-2 max-h-48 min-h-[56px] resize-none outline-none custom-scrollbar placeholder-gray-400/50"
+                            rows={1}
+                        />
+
+                        <div className="pr-3 pb-3">
+                            <button
+                                onClick={handleSendMessage}
+                                disabled={(!userInput.trim() && attachments.length === 0) || isGenerating}
+                                className={`p-2 rounded-md transition-colors ${(!userInput.trim() && attachments.length === 0) ? 'bg-transparent text-gray-500 cursor-default' : 'bg-[#19c37d] text-white hover:bg-[#1a885d]'}`}
+                            >
+                                <svg stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <p className="text-center text-xs text-gray-500 mt-2">Personal Agent may produce inaccurate information about people, places, or facts.</p>
             </div>
         </div>
-    ), [editingAvatar, editingName, editingModelId, modelConfigs, chatMessages, isGenerating, userInput, handleSendMessage]);
+    ), [editingAvatar, editingName, editingModelId, modelConfigs, chatMessages, isGenerating, userInput, handleSendMessage, attachments]);
 
     return (
         <div className="flex-1 bg-[#0b0b0b] flex overflow-hidden relative">

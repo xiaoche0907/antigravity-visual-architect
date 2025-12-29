@@ -79,132 +79,145 @@ const Workspace: React.FC<WorkspaceProps> = ({
     };
 
     const handleRunWorkflow = async () => {
+        // --- 1. 验证输入 ---
         if (!input.usps || !input.specs) {
             alert("请完善核心卖点和关键评参数。");
             return;
         }
 
-        // ✅ 验证文本模型配置（首席策略官）
+        // --- 2. 锁定【大脑】(Strategy Model) ---
         const brainConfig = modelConfigs.find(m => m.id === selectedBrainModelId);
-        console.log('🧠 [Workspace] 首席策略官（文本模型）:', brainConfig ? {
-            id: brainConfig.id,
-            name: brainConfig.name,
-            provider: brainConfig.provider,
-            modelId: brainConfig.modelId
-        } : '❌ 未选择');
+        console.log('🧠 [Workspace] 锁定首席策略官:', brainConfig ? `${brainConfig.name} (${brainConfig.provider})` : '❌ 未选择');
 
-        if (!config.mockMode && !brainConfig) {
-            alert("⚠️ 请先在 AI 员工页面选择有效的文本模型（首席策略官）！");
+        if (!config.mockMode && (!brainConfig || !brainConfig.isEnabled)) {
+            alert(`⚠️ 策略模型 (ID: ${selectedBrainModelId}) 不可用或已禁用，请在“AI 员工”页面检查配置。`);
             return;
         }
 
-        // ✅ 验证图像模型配置（视觉执行官）- 仅在同步生图模式下需要
-        const visualConfig = modelConfigs.find(m => m.id === selectedVisualModelId);
-        if (mode === WorkflowMode.DIRECT_GENERATION && !config.mockMode && !visualConfig) {
-            console.warn('⚠️ [Workspace] 同步生图模式下未选择图像模型');
-            showToast('⚠️ 同步生图模式需要选择图像模型（视觉执行官）');
+        // --- 3. 锁定【画师】(Visual Model) ---
+        let visualConfig: ModelConfig | undefined;
+        if (mode === WorkflowMode.DIRECT_GENERATION) {
+            visualConfig = modelConfigs.find(m => m.id === selectedVisualModelId);
+            // 严格检查：同步出图模式下，必须有可用的图像模型
+            if (!config.mockMode && (!visualConfig || !visualConfig.isEnabled)) {
+                alert(`⚠️ 图像模型 (ID: ${selectedVisualModelId}) 不可用或已禁用。请配置图像模型或切换为“仅生成方案”模式。`);
+                return;
+            }
         }
 
         setLoadingState('analyzing');
         setStrategy(null);
+        showToast('🧠 策略大脑正在分析 A9 转化要素...');
 
         try {
-            // 🔥 第一步：大脑思考（文本模型生成策略）
-            console.log('🚀 [Workflow Step 1] 首席策略官开始分析...');
+            // === Step 1: 策略大脑工作 ===
+            console.log('🧠 [Step 1] 策略模型正在拆解用户痛点与卖点...');
             const strategyData = await generateMarketingStrategy(input, roleFocus, brainConfig || null, config);
-            console.log('✅ [Workflow Step 1] 策略生成完成');
 
-            // 🛡️ 数据验证：确保返回的数据结构完整
+            // 🛡️ 数据完整性验证
             if (!strategyData) {
-                console.error('❌ [Workspace] 返回结果为 null/undefined');
-                showToast('❌ 分析失败：服务未返回有效数据');
-                setLoadingState('idle');
-                return;
+                throw new Error("策略服务返回为空");
             }
-
-            if (!strategyData.analysis) {
-                console.warn('⚠️ [Workspace] 返回结果缺少 analysis 字段');
-            }
-
-            // 🔥 第二步：判断是否需要同步生图（直接生成模式）
-            if (mode === WorkflowMode.DIRECT_GENERATION) {
-                console.log('🎨 [Workflow Step 2] 进入同步生图模式');
-                setLoadingState('generating');
-
-                // 生成所有副图和 A+ 内容的图片
-                await handleGenerateAllImages(strategyData);
+            if (strategyData.isError) {
+                throw new Error(strategyData.errorMessage || "策略分析遭遇未知错误");
             }
 
             setStrategy(strategyData);
-            showToast('✅ 策略生成成功！');
+            console.log('✅ 策略分析完成。');
+
+            // === Step 2: 视觉画师工作 ===
+            if (mode === WorkflowMode.DIRECT_GENERATION) {
+                console.log(`🎨 [Step 2] 画师 [${visualConfig?.name || 'Mock'}] 接收指令...`);
+                setLoadingState('generating');
+                showToast('🎨 视觉执行官正在绘制方案...');
+
+                // 调用生图逻辑 (Brain -> Painter 传递)
+                await handleGenerateAllImages(strategyData);
+            } else {
+                showToast('✅ 策略方案已生成！');
+            }
 
         } catch (error: any) {
-            // 🛡️ 错误处理：确保不会黑屏
-            console.error("❌ [Workspace] 工作流运行错误:", error);
-            console.error("错误详情:", {
-                name: error?.name,
-                message: error?.message,
-                stack: error?.stack?.substring(0, 200)
-            });
-
-            // 使用 Toast 而非 alert 提供更好的用户体验
-            const errorMsg = error?.message || "未知错误，请检查控制台日志";
-            showToast(`❌ A9 引擎错误: ${errorMsg}`);
-
-            // 可选：也用 alert 保证用户一定能看到
-            alert(`⚠️ A9 引擎运行中断\n\n错误信息：${errorMsg}\n\n建议：\n1. 检查 AI 模型配置是否正确\n2. 查看浏览器控制台获取详细日志\n3. 确认网络连接正常`);
+            console.error("❌ [Workspace] 任务中断:", error);
+            const errorMsg = error?.message || "未知错误";
+            showToast(`❌ 执行失败: ${errorMsg}`);
+            // 只有严重错误才弹窗
+            if (!errorMsg.includes("生成失败")) {
+                alert(`执行失败: ${errorMsg}`);
+            }
         } finally {
             setLoadingState('idle');
-            console.log('🏁 [Workspace] 工作流结束，状态重置为 idle');
+            console.log('🏁 任务全流程结束');
         }
     };
 
     const handleGenerateAllImages = async (currentStrategy: MarketingStrategy) => {
-        // 🎨 视觉执行官（图像模型）
+        // 再次获取并验证配置 (Double Check)
         const visualConfig = modelConfigs.find(m => m.id === selectedVisualModelId);
-
-        if (!config.mockMode && !visualConfig) {
-            console.error('❌ [handleGenerateAllImages] 未配置图像模型');
-            showToast('⚠️ 无法生成图片：未选择图像模型');
-            return;
+        if (!config.mockMode && (!visualConfig || !visualConfig.isEnabled)) {
+            throw new Error("图像模型配置在生图阶段失效");
         }
 
-        console.log('🎨 [Workspace] 视觉执行官（图像模型）:', visualConfig ? {
-            id: visualConfig.id,
-            name: visualConfig.name,
-            category: visualConfig.category
-        } : 'Mock 模式');
+        console.log('🎨 [handleGenerateAllImages] 视觉执行官就位:', visualConfig?.name);
 
         const updated = { ...currentStrategy };
+        let hasError = false;
 
         try {
-            // 生成副图
-            console.log(`🖼️ [Image Generation] 开始生成 ${updated.secondaryImages.length} 张副图...`);
+            // 1. 生成副图 (Secondary Images)
+            console.log(`🖼️ [Painter] 开始绘制 ${updated.secondaryImages.length} 张副图...`);
             for (let i = 0; i < updated.secondaryImages.length; i++) {
-                console.log(`  📸 [${i + 1}/${updated.secondaryImages.length}] 正在生成: ${updated.secondaryImages[i].type}`);
-                const prompt = updated.secondaryImages[i].visualPrompt;
-                const url = await generateVisual(prompt, visualConfig || null, config);
-                updated.secondaryImages[i].generatedImageUrl = url;
-                setStrategy({ ...updated }); // 实时更新 UI
+                const item = updated.secondaryImages[i];
+                console.log(`  📸 [${i + 1}/${updated.secondaryImages.length}] 正在生成: ${item.type}`);
+
+                // 核心逻辑：从策略大脑提取 "visualPrompt"
+                let prompt = item.visualPrompt;
+                if (!prompt || prompt.length < 5) {
+                    console.warn(`  ⚠️ Prompt 缺失，使用兜底描述`);
+                    prompt = `Professional commercial photography of ${input.usps}, ${item.description}, 8k resolution`;
+                }
+
+                try {
+                    const url = await generateVisual(prompt, visualConfig || null, config);
+                    updated.secondaryImages[i].generatedImageUrl = url;
+                    // 实时更新 UI，让用户看到进度
+                    setStrategy({ ...updated });
+                } catch (imgErr) {
+                    console.error(`  ❌ 图片生成失败 [${item.id}]:`, imgErr);
+                    hasError = true;
+                }
             }
 
-            // 生成 A+ 内容图片
-            console.log(`📑 [Image Generation] 开始生成 ${updated.aPlusContent.length} 张 A+ 图片...`);
+            // 2. 生成 A+ 内容图片
+            console.log(`📑 [Painter] 开始根据 A+ 布局绘图...`);
             for (let i = 0; i < updated.aPlusContent.length; i++) {
-                console.log(`  📄 [${i + 1}/${updated.aPlusContent.length}] 正在生成: ${updated.aPlusContent[i].moduleType}`);
-                const guidance = updated.aPlusContent[i].visualGuidance;
-                const url = await generateVisual(guidance, visualConfig || null, config);
-                updated.aPlusContent[i].generatedImageUrl = url;
-                setStrategy({ ...updated }); // 实时更新 UI
+                const item = updated.aPlusContent[i];
+                console.log(`  📄 [${i + 1}/${updated.aPlusContent.length}] 正在生成: ${item.moduleType}`);
+
+                let prompt = item.visualGuidance; // A+ 使用 visualGuidance 作为 Prompt
+                if (!prompt || prompt.length < 5) {
+                    prompt = `High quality product image for Amazon A+ content, ${item.moduleType}, ${input.usps}`;
+                }
+
+                try {
+                    const url = await generateVisual(prompt, visualConfig || null, config);
+                    updated.aPlusContent[i].generatedImageUrl = url;
+                    setStrategy({ ...updated });
+                } catch (imgErr) {
+                    console.error(`  ❌ A+ 图片生成失败 [${item.id}]:`, imgErr);
+                    hasError = true;
+                }
             }
 
-            console.log('✅ [Image Generation] 所有图片生成完成');
-            showToast('✨ 图片生成完成！');
+            if (hasError) {
+                showToast('⚠️ 部分图片生成失败，请检查日志');
+            } else {
+                showToast('✨ 所有视觉资产生成完毕！');
+            }
 
         } catch (error: any) {
-            console.error("❌ [Image Generation] 图片生成失败:", error);
-            showToast(`❌ 图片生成失败: ${error.message}`);
-            // 不抛出错误，保留已生成的策略文本
+            console.error("❌ [Image Generation] 致命错误:", error);
+            throw error; // 向上抛出，中断流程
         }
     };
 
@@ -497,26 +510,56 @@ const Workspace: React.FC<WorkspaceProps> = ({
 
                             {activeTab === 'aplus' && (
                                 <div className="space-y-6">
-                                    {/* (A+ Content Rendering - Unchanged) */}
-                                    {strategy.aPlusContent && strategy.aPlusContent.length > 0 ? strategy.aPlusContent.map((m, i) => (
-                                        <div key={i} className="bg-[#1e1f20] p-6 rounded-2xl border border-[#3c4043] flex gap-6">
-                                            <div className="w-32 h-32 bg-black rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden border border-[#3c4043]">
-                                                {m.generatedImageUrl ? <img src={m.generatedImageUrl} className="w-full h-full object-cover" /> : <span className="text-2xl opacity-50">📑</span>}
-                                            </div>
-                                            <div className="flex-1">
-                                                <h4 className="text-[#A8C7FA] font-bold text-sm uppercase tracking-wider">{m.moduleType}</h4>
-                                                <p className="text-gray-300 text-sm mt-2 leading-relaxed">{m.content}</p>
-                                                <div className="mt-3 bg-[#131314] p-3 rounded-lg border border-[#3c4043]">
-                                                    <span className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Visual Guide</span>
-                                                    <p className="text-xs text-gray-400 font-mono">{m.visualGuidance}</p>
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-xl font-bold text-white">A+ 详情页布局方案</h3>
+                                        <p className="text-xs text-gray-500">高转化 A+ Content 视觉模块</p>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-8">
+                                        {strategy.aPlusContent && strategy.aPlusContent.length > 0 ? strategy.aPlusContent.map((m, i) => (
+                                            <div key={i} className="bg-[#1e1f20] rounded-3xl border border-[#3c4043] overflow-hidden shadow-2xl flex flex-col">
+                                                {/* Header */}
+                                                <div className="p-4 border-b border-[#3c4043] bg-[#252a31] flex justify-between items-center">
+                                                    <span className="text-[#A8C7FA] font-bold text-sm">#{i + 1} {m.moduleType}</span>
+                                                    <span className="text-[10px] text-gray-400 bg-black/30 px-2 py-1 rounded">Module {m.id}</span>
+                                                </div>
+                                                {/* Image Area - 16:9 横图 */}
+                                                <div className="aspect-video bg-black relative flex items-center justify-center overflow-hidden group border-b border-[#3c4043]">
+                                                    {m.generatedImageUrl ? (
+                                                        <img src={m.generatedImageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                                                    ) : (
+                                                        <div className="text-center p-6">
+                                                            <div className="text-4xl mb-2 opacity-20">📑</div>
+                                                            <p className="text-xs text-gray-500">等待生成 16:9 横图...</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {/* Meta Info */}
+                                                <div className="p-6 flex-1 flex flex-col space-y-4">
+                                                    <div>
+                                                        <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">模块内容</span>
+                                                        <p className="text-sm text-gray-300 leading-relaxed">{m.content}</p>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">视觉指导 (Visual Guidance)</span>
+                                                        <p className="text-xs text-white bg-[#131314] p-3 rounded-lg border border-[#3c4043]">{m.visualGuidance}</p>
+                                                    </div>
+                                                    <div className="mt-auto pt-4 border-t border-[#3c4043]">
+                                                        <details className="group">
+                                                            <summary className="text-[10px] text-gray-500 cursor-pointer list-none flex items-center gap-2 hover:text-gray-300">
+                                                                <span className="group-open:rotate-90 transition-transform">▶</span> Show Image Prompt
+                                                            </summary>
+                                                            <p className="mt-2 text-[10px] font-mono text-gray-500 bg-black p-2 rounded selectable">{m.visualGuidance || '无生图提示词'}</p>
+                                                        </details>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    )) : (
-                                        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6 text-center">
-                                            <p className="text-yellow-300">⚠️ 暂无 A+ 内容数据</p>
-                                        </div>
-                                    )}
+                                        )) : (
+                                            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6 text-center">
+                                                <p className="text-yellow-300">⚠️ 暂无 A+ 内容数据</p>
+                                                <button onClick={() => setActiveTab('analysis')} className="text-xs text-yellow-500 underline mt-2">返回分析页检查错误</button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -527,7 +570,15 @@ const Workspace: React.FC<WorkspaceProps> = ({
                 <div className={`absolute top-0 right-0 bottom-0 w-80 bg-[#1e1f20]/95 backdrop-blur-xl border-l border-[#3c4043] shadow-2xl transform transition-transform duration-300 z-50 flex flex-col ${showHistory ? 'translate-x-0' : 'translate-x-full'}`}>
                     <div className="p-4 border-b border-[#3c4043] flex justify-between items-center bg-[#131314]/50">
                         <h3 className="font-bold text-white flex items-center"><span className="mr-2">🗂️</span> Project History</h3>
-                        <button onClick={() => setShowHistory(false)} className="text-gray-500 hover:text-white">✕</button>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => onDeleteSession('__FORCE_CLEAR_ALL__')}
+                                className="text-[10px] bg-red-900/20 text-red-400 border border-red-900/50 px-2 py-1 rounded hover:bg-red-900/40 transition-colors"
+                            >
+                                🧹 强制清理
+                            </button>
+                            <button onClick={() => setShowHistory(false)} className="text-gray-500 hover:text-white px-2">✕</button>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
                         {history.length === 0 ? (

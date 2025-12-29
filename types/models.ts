@@ -7,7 +7,7 @@
 export type ModelCategory = 'text' | 'image';
 
 // 提供商类型
-export type ProviderType = 'google' | 'aliyun' | 'openai' | 'volcengine' | 'openai-compatible' | 'custom';
+export type ProviderType = 'google' | 'aliyun' | 'openai' | 'volcengine' | 'modelscope' | 'openai-compatible' | 'custom';
 
 /**
  * 模型配置接口 - 每个配置都是一个独立的资产
@@ -46,6 +46,10 @@ export const PROVIDER_DEFAULTS: Record<ProviderType, { baseUrl: string; name: st
         name: '火山引擎 (Volcengine)',
         baseUrl: 'https://ark.cn-beijing.volces.com/api/v3'
     },
+    modelscope: {
+        name: 'ModelScope (阿里魔搭)',
+        baseUrl: 'https://api-inference.modelscope.cn/v1'
+    },
     'openai-compatible': {
         name: 'OpenAI 兼容协议 (通用)',
         baseUrl: ''
@@ -64,6 +68,7 @@ export const RECOMMENDED_TEXT_MODELS: Record<ProviderType, string[]> = {
     aliyun: ['qwen-max', 'qwen-plus', 'qwen-turbo', 'qwen-long'],
     openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'],
     volcengine: ['doubao-pro-32k', 'doubao-lite-4k', 'ep-20241228-xxxxx'],
+    modelscope: [],  // ModelScope 主要用于图像生成
     'openai-compatible': ['deepseek-chat', 'moonshot-v1-8k', 'yi-large', 'llama2'],
     custom: []
 };
@@ -76,6 +81,7 @@ export const RECOMMENDED_IMAGE_MODELS: Record<ProviderType, string[]> = {
     aliyun: ['wanx-v1', 'wanx-sketch-to-image-v1', 'wanx-style-repaint-v1'],
     openai: ['dall-e-3', 'dall-e-2'],
     volcengine: [],
+    modelscope: ['Tongyi-MAI/Z-Image-Turbo', 'Tongyi-MAI/Z-Image', 'stabilityai/stable-diffusion-xl', 'stabilityai/stable-diffusion-3-medium'],
     'openai-compatible': [],
     custom: []
 };

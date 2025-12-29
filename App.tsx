@@ -82,7 +82,16 @@ const App: React.FC = () => {
   // --- HISTORY STATE ---
   const [history, setHistory] = useState<HistorySession[]>(() => {
     const saved = localStorage.getItem(HISTORY_KEY);
-    try { return saved ? JSON.parse(saved) : []; } catch (e) { return []; }
+    try {
+      const parsed = saved ? JSON.parse(saved) : [];
+      if (!Array.isArray(parsed)) return [];
+
+      // 数据清洗：强制所有 ID 转为 String，修复旧数据兼容性问题
+      return parsed.map((item: any) => ({
+        ...item,
+        id: String(item.id)
+      }));
+    } catch (e) { return []; }
   });
 
   // --- PERSONAL AGENTS STATE ---
@@ -144,8 +153,24 @@ const App: React.FC = () => {
   };
 
   const deleteSession = (id: string) => {
+    // 特殊指令：强制清空所有 (用于解决异常数据卡死问题)
+    if (id === '__FORCE_CLEAR_ALL__') {
+      if (window.confirm("⚠️ 确定要强制清空所有历史记录吗？这可以解决数据卡死的问题。")) {
+        setHistory([]);
+        localStorage.removeItem(HISTORY_KEY);
+        console.log('[App] All history cleared by user.');
+      }
+      return;
+    }
+
+    console.log('[App] Request delete session:', id);
+    // 强制转换为 String 进行比较，防止旧数据类型不一致
     if (window.confirm("确定要删除这条历史记录吗？")) {
-      setHistory(prev => prev.filter(h => h.id !== id));
+      setHistory(prev => {
+        const next = prev.filter(h => String(h.id) !== String(id));
+        console.log('[App] Session deleted. Count:', next.length);
+        return next;
+      });
     }
   };
 

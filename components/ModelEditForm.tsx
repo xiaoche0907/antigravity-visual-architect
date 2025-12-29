@@ -281,6 +281,21 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
                 }
             }
 
+            // === ModelScope (阿里魔搭) - 使用推荐列表 ===
+            else if (formData.provider === 'modelscope') {
+                // ModelScope 异步接口不支持标准的 /models 端点，直接使用推荐列表
+                console.log('ModelScope 使用推荐模型列表');
+                models = formData.category === 'text'
+                    ? RECOMMENDED_TEXT_MODELS.modelscope
+                    : RECOMMENDED_IMAGE_MODELS.modelscope;
+
+                if (models.length === 0) {
+                    setErrors(['💡 ModelScope 主要用于图像生成，请切换到图像模型分类']);
+                } else {
+                    setErrors(['💡 ModelScope 使用异步轮询模式生成图像，推荐使用 Z-Image-Turbo']);
+                }
+            }
+
             // === OpenAI Compatible (通用兼容) - 优先推荐列表 ===
             else if (formData.provider === 'openai-compatible') {
                 try {
