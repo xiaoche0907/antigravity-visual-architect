@@ -68,7 +68,7 @@ export const generateMarketingStrategy = async (
                         { id: 2, type: "生活场景", description: "Coffee shop usage", visualPrompt: "Coffee shop, lifestyle", copywriting: "随时随地" }
                     ],
                     aPlusContent: [
-                        { id: 1, moduleType: "品牌故事", content: "品牌起源", visualGuidance: "Brand hero image" }
+                        { id: 1, moduleType: "品牌故事", content: "品牌起源", visualGuidance: "Brand hero image", visualPrompt: "Brand hero image, minimalist, 8k" }
                     ]
                 });
             }, 1000);
@@ -99,7 +99,7 @@ export const generateMarketingStrategy = async (
         ... (共5张)
       ],
       "aPlusContent": [
-        { "id": 1, "moduleType": "模块类型", "content": "文本内容", "visualGuidance": "视觉指导" },
+        { "id": 1, "moduleType": "模块类型", "content": "文本内容", "visualGuidance": "中文视觉指导", "visualPrompt": "英文生图提示词 (Detailed English Midjourney Prompt)" },
          ... (共5-7个)
       ]
     }

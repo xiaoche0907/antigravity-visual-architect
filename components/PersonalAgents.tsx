@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { PersonalAgent } from '../types';
 import { ModelConfig } from '../types/models';
 import { GoogleGenAI } from '@google/genai';
+import MarkdownRenderer from './MarkdownRenderer';
 
 interface PersonalAgentsProps {
     agents: PersonalAgent[];
@@ -110,6 +111,8 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
     const [userInput, setUserInput] = useState<string>('');
     const [isGenerating, setIsGenerating] = useState<boolean>(false);
     const [previewExpanded, setPreviewExpanded] = useState<boolean>(false);
+    // ✅ 新增：加载状态标记，防止初始化时的空数据覆盖由于 saveAgentSession 导致的 localStorage 清空
+    const [isSessionLoaded, setIsSessionLoaded] = useState<boolean>(false);
 
     // 📎 附件状态
     const [attachments, setAttachments] = useState<string[]>([]);
@@ -156,6 +159,8 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
 
             // 只有真正切换到不同的智能体时，才从 localStorage 恢复状态
             if (agentChanged) {
+                setIsSessionLoaded(false); // 切换时先标记为未加载
+
                 // 🔥 核心修改：从 localStorage 恢复会话状态
                 const savedSession = loadAgentSession(selectedAgent.id);
                 if (savedSession) {
@@ -166,6 +171,10 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
                     setViewMode('edit');
                     setChatMessages([]);
                 }
+
+                setIsSessionLoaded(true); // 加载完成
+
+                // 仅重置输入框，保留其他状态
                 setUserInput('');
                 setAttachments([]); // 清空附件
                 prevAgentIdRef.current = selectedAgent.id;
@@ -175,14 +184,16 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
 
     // 自动保存会话状态到 localStorage
     useEffect(() => {
-        if (selectedAgent) {
+        // 🚨 只有当会话确实加载完成后，且有选中的智能体时才保存
+        // 防止组件挂载时的初始空状态覆盖掉 localStorage 中的历史记录
+        if (selectedAgent && isSessionLoaded) {
             saveAgentSession(selectedAgent.id, {
                 mode: viewMode,
                 messages: chatMessages,
                 lastUpdated: Date.now()
             });
         }
-    }, [selectedAgent?.id, viewMode, chatMessages]);
+    }, [selectedAgent?.id, viewMode, chatMessages, isSessionLoaded]);
 
 
     const showToast = useCallback((msg: string) => {
@@ -563,73 +574,91 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
             </header>
 
             {/* 聊天区域 */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6 bg-[#343541]">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-0 space-y-8 bg-[#343541] scroll-smooth">
                 {chatMessages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center opacity-30 select-none pb-20">
-                        <div className="text-8xl mb-4 grayscale opacity-50">{editingAvatar}</div>
+                        <div className="text-8xl mb-4 grayscale opacity-50 bg-[#40414f] rounded-3xl p-6">{editingAvatar}</div>
                         <h3 className="text-xl font-medium text-gray-400">How can I help you today?</h3>
                     </div>
                 ) : (
-                    chatMessages.map((msg, i) => (
-                        <div key={i} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`max-w-[850px] flex gap-4 p-6 rounded-xl ${msg.role === 'user' ? 'bg-[#343541] flex-row-reverse' : 'w-full bg-[#444654] border border-black/10'}`}>
-                                <div className="text-2xl pt-1 shrink-0">
-                                    {msg.role === 'user' ? '👤' : editingAvatar}
-                                </div>
-                                <div className="prose prose-invert max-w-none flex-1">
-                                    {/* 显示用户发送的图片 */}
-                                    {msg.attachments && msg.attachments.length > 0 && (
-                                        <div className={`flex flex-wrap gap-2 mb-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
-                                            {msg.attachments.map((img, idx) => (
-                                                <img
-                                                    key={idx}
-                                                    src={img}
-                                                    className="max-h-64 rounded-lg border border-white/10"
-                                                    alt="Upload"
-                                                />
-                                            ))}
-                                        </div>
-                                    )}
-                                    <div className={`whitespace-pre-wrap text-gray-100 leading-7 text-[15px] ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                                        {msg.content}
+                    <div className="flex flex-col w-full items-center pb-32 pt-8">
+                        {chatMessages.map((msg, i) => (
+                            <div key={i} className={`w-full flex justify-center py-2 ${msg.role === 'user' ? 'bg-transparent' : 'bg-transparent'}`}>
+                                <div className="w-full max-w-3xl flex gap-6 px-4 md:px-0 relative group">
+                                    <div className={`text-3xl shrink-0 select-none ${msg.role === 'user' ? 'order-2' : ''}`}>
+                                        {msg.role === 'user' ? (
+                                            <div className="w-8 h-8 rounded-sm bg-[#5436DA] flex items-center justify-center text-sm text-white">
+                                                👤
+                                            </div>
+                                        ) : (
+                                            <div className="w-8 h-8 rounded-sm overflow-hidden flex items-center justify-center text-xl bg-[#19c37d] border border-black/10 shadow-sm">
+                                                {editingAvatar}
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className={`text-[10px] text-gray-500 mt-2 font-mono ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                                        {new Date(msg.timestamp).toLocaleTimeString()}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    ))
-                )}
 
-                {isGenerating && (
-                    <div className="w-full justify-start flex">
-                        <div className="max-w-[850px] w-full bg-[#444654] p-6 rounded-xl flex gap-4 border border-black/10">
-                            <div className="text-2xl pt-1 shrink-0">{editingAvatar}</div>
-                            <div className="flex items-center gap-1 h-7">
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                                    <div className={`prose prose-invert max-w-none flex-1 min-w-0 ${msg.role === 'user' ? 'text-right order-1' : ''}`}>
+                                        {/* Name for AI */}
+                                        {msg.role === 'assistant' && (
+                                            <div className="font-bold text-sm text-gray-300 mb-1">{editingName}</div>
+                                        )}
+
+                                        {/* Attachments */}
+                                        {msg.attachments && msg.attachments.length > 0 && (
+                                            <div className={`flex flex-wrap gap-2 mb-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                                                {msg.attachments.map((img, idx) => (
+                                                    <img
+                                                        key={idx}
+                                                        src={img}
+                                                        className="max-h-48 rounded-lg border border-white/10 hover:opacity-90 transition-opacity cursor-pointer"
+                                                        alt="Upload"
+                                                    />
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <div className={`text-gray-100 leading-7 text-[16px] ${msg.role === 'user' ? 'bg-[#40414f] inline-block px-5 py-3 rounded-2xl rounded-tr-sm text-left' : ''}`}>
+                                            {msg.role === 'user' ? (
+                                                <div className="whitespace-pre-wrap">{msg.content}</div>
+                                            ) : (
+                                                <MarkdownRenderer content={msg.content} />
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                        ))}
+
+                        {isGenerating && (
+                            <div className="w-full flex justify-center py-6">
+                                <div className="w-full max-w-3xl flex gap-6 px-4 md:px-0">
+                                    <div className="w-8 h-8 rounded-sm overflow-hidden flex items-center justify-center text-xl bg-[#19c37d] border border-black/10 shadow-sm shrink-0">
+                                        {editingAvatar}
+                                    </div>
+                                    <div className="flex items-center gap-1 h-7">
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
-                {/* 底部垫一下，防止输入框遮挡 */}
-                <div className="h-40"></div>
             </div>
 
             {/* 输入区域 */}
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#343541] via-[#343541] to-transparent pt-10 pb-8 px-4">
-                <div className="max-w-3xl mx-auto relative cursor-text bg-[#40414f] rounded-xl shadow-2xl border border-black/20 overflow-hidden">
-                    {/* 附件预览区 */}
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#343541] via-[#343541] to-transparent pt-10 pb-6 px-4">
+                <div className="max-w-3xl mx-auto relative">
+                    {/* 附件预览区 (Floating above) */}
                     {attachments.length > 0 && (
-                        <div className="flex gap-3 p-3 border-b border-black/10 overflow-x-auto custom-scrollbar bg-[#383945]">
+                        <div className="absolute -top-24 left-0 right-0 flex gap-3 p-3 overflow-x-auto custom-scrollbar">
                             {attachments.map((img, idx) => (
                                 <div key={idx} className="relative flex-shrink-0 group">
-                                    <img src={img} className="h-16 w-16 object-cover rounded-lg border border-white/20" alt="preview" />
+                                    <img src={img} className="h-20 w-20 object-cover rounded-xl border-2 border-white/20 shadow-lg bg-[#40414f]" alt="preview" />
                                     <button
                                         onClick={() => removeAttachment(idx)}
-                                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center opacity-100 hover:scale-110 transition-all shadow-lg"
                                     >
                                         ×
                                     </button>
@@ -638,53 +667,58 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
                         </div>
                     )}
 
-                    <div className="flex items-end pl-2">
-                        {/* 文件上传按钮 */}
-                        <div className="pb-3 text-gray-400 hover:text-white transition-colors">
-                            <button
-                                onClick={() => fileInputRef.current?.click()}
-                                className="p-2 rounded-lg hover:bg-black/20"
-                                title="上传图片"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
-                            </button>
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                className="hidden"
-                                onChange={handleFileSelect}
+                    <div className="relative cursor-text bg-[#40414f] rounded-2xl shadow-xl border border-black/20 overflow-hidden ring-1 ring-white/5 focus-within:ring-white/10 transition-shadow">
+                        <div className="flex items-end pl-3">
+                            {/* 文件上传按钮 */}
+                            <div className="pb-3 text-gray-400 hover:text-white transition-colors">
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="p-2 rounded-lg hover:bg-black/20 transition-colors"
+                                    title="上传图片"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                                </button>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    className="hidden"
+                                    onChange={handleFileSelect}
+                                />
+                            </div>
+
+                            <textarea
+                                value={userInput}
+                                onChange={e => setUserInput(e.target.value)}
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleSendMessage();
+                                    }
+                                }}
+                                disabled={isGenerating}
+                                placeholder={`Message ${editingName}...`}
+                                className="flex-1 bg-transparent text-white border-0 focus:ring-0 py-4 px-3 max-h-52 min-h-[56px] resize-none outline-none custom-scrollbar placeholder-gray-400/50 text-[16px]"
+                                rows={1}
+                                style={{ height: '56px' }}
                             />
-                        </div>
 
-                        <textarea
-                            value={userInput}
-                            onChange={e => setUserInput(e.target.value)}
-                            onKeyDown={e => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleSendMessage();
-                                }
-                            }}
-                            disabled={isGenerating}
-                            placeholder={`Send a message to ${editingName}...`}
-                            className="flex-1 bg-transparent text-white border-0 focus:ring-0 py-4 px-2 max-h-48 min-h-[56px] resize-none outline-none custom-scrollbar placeholder-gray-400/50"
-                            rows={1}
-                        />
-
-                        <div className="pr-3 pb-3">
-                            <button
-                                onClick={handleSendMessage}
-                                disabled={(!userInput.trim() && attachments.length === 0) || isGenerating}
-                                className={`p-2 rounded-md transition-colors ${(!userInput.trim() && attachments.length === 0) ? 'bg-transparent text-gray-500 cursor-default' : 'bg-[#19c37d] text-white hover:bg-[#1a885d]'}`}
-                            >
-                                <svg stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                            </button>
+                            <div className="pr-3 pb-3">
+                                <button
+                                    onClick={handleSendMessage}
+                                    disabled={(!userInput.trim() && attachments.length === 0) || isGenerating}
+                                    className={`p-2 rounded-lg transition-colors ${(!userInput.trim() && attachments.length === 0) ? 'bg-transparent text-gray-500 cursor-default' : 'bg-[#19c37d] text-white hover:bg-[#1a885d] shadow-sm'}`}
+                                >
+                                    <svg stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                                </button>
+                            </div>
                         </div>
                     </div>
+                    <div className="text-center text-[10px] text-gray-500 mt-2 select-none">
+                        Amazon A9 Agent can make mistakes. Consider checking important information.
+                    </div>
                 </div>
-                <p className="text-center text-xs text-gray-500 mt-2">Personal Agent may produce inaccurate information about people, places, or facts.</p>
             </div>
         </div>
     ), [editingAvatar, editingName, editingModelId, modelConfigs, chatMessages, isGenerating, userInput, handleSendMessage, attachments]);

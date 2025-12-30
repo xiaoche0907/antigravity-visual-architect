@@ -281,18 +281,40 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
                 }
             }
 
-            // === ModelScope (阿里魔搭) - 使用推荐列表 ===
+            // === ModelScope (阿里魔搭) - 尝试 Fetch + 推荐列表 ===
             else if (formData.provider === 'modelscope') {
-                // ModelScope 异步接口不支持标准的 /models 端点，直接使用推荐列表
-                console.log('ModelScope 使用推荐模型列表');
-                models = formData.category === 'text'
+                try {
+                    let endpoint = formData.baseUrl;
+                    if (!endpoint.endsWith('/models')) {
+                        endpoint = `${endpoint.replace(/\/$/, '')}/models`;
+                    }
+
+                    const response = await fetch(endpoint, {
+                        headers: {
+                            'Authorization': `Bearer ${formData.apiKey}`
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API 响应错误: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    models = (data.data || data.models || []).map((m: any) => m.id || m.name);
+
+                } catch (error) {
+                    console.warn('ModelScope 列表获取失败，回退到推荐列表', error);
+                }
+
+                // 合并推荐列表 (去重)
+                const recommended = formData.category === 'text'
                     ? RECOMMENDED_TEXT_MODELS.modelscope
                     : RECOMMENDED_IMAGE_MODELS.modelscope;
 
+                models = Array.from(new Set([...models, ...recommended]));
+
                 if (models.length === 0) {
-                    setErrors(['💡 ModelScope 主要用于图像生成，请切换到图像模型分类']);
-                } else {
-                    setErrors(['💡 ModelScope 使用异步轮询模式生成图像，推荐使用 Z-Image-Turbo']);
+                    setErrors(['💡 未找到模型，请手动输入模型 ID (如 ZhipuAI/GLM-4.7)']);
                 }
             }
 

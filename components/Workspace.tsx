@@ -161,14 +161,16 @@ const Workspace: React.FC<WorkspaceProps> = ({
         console.log('🎨 [handleGenerateAllImages] 视觉执行官就位:', visualConfig?.name);
 
         const updated = { ...currentStrategy };
-        let hasError = false;
+
+        // 状态更新辅助函数
+        const updateState = () => setStrategy({ ...updated });
 
         try {
-            // 1. 生成副图 (Secondary Images)
-            console.log(`🖼️ [Painter] 开始绘制 ${updated.secondaryImages.length} 张副图...`);
-            for (let i = 0; i < updated.secondaryImages.length; i++) {
-                const item = updated.secondaryImages[i];
-                console.log(`  📸 [${i + 1}/${updated.secondaryImages.length}] 正在生成: ${item.type}`);
+            // === 1. 并行生成副图 (Secondary Images) ===
+            console.log(`🖼️ [Painter] 并行绘制 ${updated.secondaryImages.length} 张副图...`);
+
+            const secondaryPromises = updated.secondaryImages.map(async (item, i) => {
+                console.log(`  📸 [Secondary #${i + 1}] 启动任务: ${item.type}`);
 
                 // 核心逻辑：从策略大脑提取 "visualPrompt"
                 let prompt = item.visualPrompt;
@@ -180,21 +182,24 @@ const Workspace: React.FC<WorkspaceProps> = ({
                 try {
                     const url = await generateVisual(prompt, visualConfig || null, config);
                     updated.secondaryImages[i].generatedImageUrl = url;
-                    // 实时更新 UI，让用户看到进度
-                    setStrategy({ ...updated });
+                    updateState(); // 实时更新
+                    console.log(`  ✅ [Secondary #${i + 1}] 完成`);
                 } catch (imgErr) {
                     console.error(`  ❌ 图片生成失败 [${item.id}]:`, imgErr);
-                    hasError = true;
                 }
-            }
+            });
 
-            // 2. 生成 A+ 内容图片
-            console.log(`📑 [Painter] 开始根据 A+ 布局绘图...`);
-            for (let i = 0; i < updated.aPlusContent.length; i++) {
-                const item = updated.aPlusContent[i];
-                console.log(`  📄 [${i + 1}/${updated.aPlusContent.length}] 正在生成: ${item.moduleType}`);
+            // === 2. 并行生成 A+ 内容图片 ===
+            console.log(`📑 [Painter] 并行绘制 ${updated.aPlusContent.length} 张 A+ 配图...`);
 
-                let prompt = item.visualGuidance; // A+ 使用 visualGuidance 作为 Prompt
+            const aPlusPromises = updated.aPlusContent.map(async (item, i) => {
+                console.log(`  📄 [A+ #${i + 1}] 启动任务: ${item.moduleType}`);
+
+                // NEW: 优先使用 visualPrompt (AI 生成的专用 Prompt)，回退到 visualGuidance
+                let prompt = item.visualPrompt;
+                if (!prompt || prompt.length < 5) {
+                    prompt = item.visualGuidance;
+                }
                 if (!prompt || prompt.length < 5) {
                     prompt = `High quality product image for Amazon A+ content, ${item.moduleType}, ${input.usps}`;
                 }
@@ -202,18 +207,17 @@ const Workspace: React.FC<WorkspaceProps> = ({
                 try {
                     const url = await generateVisual(prompt, visualConfig || null, config);
                     updated.aPlusContent[i].generatedImageUrl = url;
-                    setStrategy({ ...updated });
+                    updateState(); // 实时更新
+                    console.log(`  ✅ [A+ #${i + 1}] 完成`);
                 } catch (imgErr) {
                     console.error(`  ❌ A+ 图片生成失败 [${item.id}]:`, imgErr);
-                    hasError = true;
                 }
-            }
+            });
 
-            if (hasError) {
-                showToast('⚠️ 部分图片生成失败，请检查日志');
-            } else {
-                showToast('✨ 所有视觉资产生成完毕！');
-            }
+            // 等待所有任务完成 (Promise.allSettled 也可以，但这里我们已经在内部 catch 了错误)
+            await Promise.all([...secondaryPromises, ...aPlusPromises]);
+
+            showToast('✨ 所有视觉资产生成完毕！');
 
         } catch (error: any) {
             console.error("❌ [Image Generation] 致命错误:", error);
@@ -548,7 +552,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                             <summary className="text-[10px] text-gray-500 cursor-pointer list-none flex items-center gap-2 hover:text-gray-300">
                                                                 <span className="group-open:rotate-90 transition-transform">▶</span> Show Image Prompt
                                                             </summary>
-                                                            <p className="mt-2 text-[10px] font-mono text-gray-500 bg-black p-2 rounded selectable">{m.visualGuidance || '无生图提示词'}</p>
+                                                            <p className="mt-2 text-[10px] font-mono text-gray-500 bg-black p-2 rounded selectable">{m.visualPrompt || m.visualGuidance || '无生图提示词'}</p>
                                                         </details>
                                                     </div>
                                                 </div>

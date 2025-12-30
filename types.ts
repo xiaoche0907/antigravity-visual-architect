@@ -52,7 +52,8 @@ export interface APlusModulePlan {
   id: number;
   moduleType: string;
   content: string;
-  visualGuidance: string;
+  visualGuidance: string; // 中文视觉指导 (用于人看)
+  visualPrompt: string;   // 英文生图提示词 (用于 AI 画)
   generatedImageUrl?: string;
 }
 

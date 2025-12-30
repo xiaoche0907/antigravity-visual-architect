@@ -68,7 +68,7 @@ export const RECOMMENDED_TEXT_MODELS: Record<ProviderType, string[]> = {
     aliyun: ['qwen-max', 'qwen-plus', 'qwen-turbo', 'qwen-long'],
     openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'],
     volcengine: ['doubao-pro-32k', 'doubao-lite-4k', 'ep-20241228-xxxxx'],
-    modelscope: [],  // ModelScope 主要用于图像生成
+    modelscope: ['ZhipuAI/GLM-4.7', 'Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-Coder-32B-Instruct'],
     'openai-compatible': ['deepseek-chat', 'moonshot-v1-8k', 'yi-large', 'llama2'],
     custom: []
 };
