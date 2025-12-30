@@ -1,87 +1,96 @@
-# 🚀 Amazon A9 Visual Architect & Agent Lab (RC-3.0)
+# 🚀 Amazon A9 Visual Architect (AntiGravity)
 
-> **专为跨境电商设计师打造的 AI 视觉策略与智能体工作台。**
-> 集成了 Amazon A9 算法分析流与高度自由的个人智能体实验室。
+![License](https://img.shields.io/badge/license-MIT-blue.svg) ![React](https://img.shields.io/badge/React-18-blue) ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue) ![Vite](https://img.shields.io/badge/build-Vite-yellow)
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-3.0.0-green)
-![Tech](https://img.shields.io/badge/tech-React%20%7C%20Vite%20%7C%20Tailwind-purple)
+> **专为亚马逊跨境电商打造的 AI 视觉与策略生成引擎。**
+> 
+> **AI-Powered Visual Strategy & Content Generator for Amazon A9 Algorithm.**
 
-## 🌟 核心功能 (Key Features)
+## 📖 项目简介 (Introduction)
 
-### 1. 🧠 Amazon A9 标准作业流 (SOP Workspace)
-专为亚马逊运营与美工设计的标准化工作流：
-- **首席策略官 (Strategy Director)**: 基于 A9 算法拆解产品核心卖点 (USPS)、消费者心理与竞品差异化。
-- **视觉执行官 (Visual Director)**: 自动生成主图、副图、A+ 页面的详细拍摄需求与构图方案。
-- **人设固化**: 支持自定义并自动保存“专家人设”，打造你的专属运营参谋。
+**AntiGravity (反重力架构)** 是一个基于 AI 智能体协作的电商生产力工具。它不仅仅是一个生图工具，而是模拟了亚马逊 A9 算法的“大脑”，通过 **“策略官 (Strategy Director)”** 与 **“视觉执行官 (Visual Director)”** 的双智能体协作，将简单的产品关键词转化为高转化率的视觉营销方案。
 
-### 2. 🧪 智能体实验室 (Agent Lab) [NEW]
-一个全功能的个人 AI 创造中心：
-- **专业级编辑器**: 支持 Markdown 语法高亮、专家提示词模板插入、变量管理。
-- **永久记忆 (Session Persistence)**: 即使关闭浏览器，对话记录与上下文依然保留，随时继续工作。
-- **沉浸式交互**: "配置"与"对话"模式无缝切换，支持多智能体管理与快速清理。
+本项目已升级至 **v4.0 架构**，支持多模态模型管理、异构 API 集成（如 OpenAI 同步流与 ModelScope 异步流）以及企业级的资产配置。
 
-### 3. 🗄️ 模型资产管理 (Model Assets)
-企业级的多模型统一管理中心：
-- **万能兼容**: 原生支持 **Google Gemini**, **OpenAI**, **Anthropic Claude**。
-- **国产大模型支持**: 完美适配 **火山引擎 (豆包/Volcengine)**, **DeepSeek**, **阿里通义千问** 等 OpenAI 兼容接口。
-- **隐私安全**: 所有 API Key 与配置仅存储在本地浏览器 (LocalStorage)，绝不上传至第三方服务器。
+## ✨ 核心特性 (Key Features)
 
----
+### 🧠 A9 智能体双核引擎
+- **首席策略官 (Brain)**: 深度分析产品卖点 (USPs)、目标受众与竞品痛点，生成符合亚马逊 SEO 逻辑的营销文案与视觉指导书。
+- **视觉执行官 (Artist)**: 接收策略官的“神谕” (Prompt)，自动调用绘图模型生成场景化的高清主图。
+- **全链路协同**: 自动提取策略中的视觉描述，无需人工干预即可完成“文生图”闭环。
+
+### 🎛️ 企业级模型资产管理 (v4.0 New!)
+- **预设模版系统 (Presets)**: 内置 **OpenAI, DeepSeek, Google Gemini, Anthropic, Aliyun** 等主流厂商配置，一键接入。
+- **异构协议支持**:
+  - ✅ 支持标准 OpenAI 格式 (同步响应)。
+  - ✅ 支持 **ModelScope (阿里魔搭)** 异步轮询机制 (Async Polling)，完美集成 **Z-Image** 等高性能开源模型。
+- **严格连通性测试**: 杜绝“假成功”，真实发送探测包验证 API Key 与权限。
+- **多类型分类**: 清晰管理 📝 文本模型 / 🎨 图像模型 / 🛠️ 功能插件。
+
+### 🖥️ 现代化工作台
+- **极简 UI**: 黑色深色模式，专注于内容的沉浸式体验。
+- **实时日志**: 像黑客帝国一样展示 AI 的思考与执行过程。
+- **响应式设计**: 适配各种屏幕尺寸。
 
 ## 🛠️ 技术栈 (Tech Stack)
 
-本项目采用纯前端架构，零后端成本，部署极简：
-
-- **Framework**: React 18 + Vite
-- **Language**: TypeScript
+- **Frontend framework**: React 18 + TypeScript
+- **Build Tool**: Vite
 - **Styling**: Tailwind CSS
 - **Icons**: Lucide React
-- **Storage**: Browser LocalStorage (No Database needed)
-- **Deployment**: Vercel / GitHub Pages
-
----
+- **State Management**: React Hooks + LocalStorage Persistence
+- **API Client**: Custom Native Fetch Service (No heavy SDKs)
 
 ## 🚀 快速开始 (Getting Started)
 
-### 1. 安装依赖
+### 1. 克隆项目
 ```bash
+git clone [https://github.com/xiaoche0907/antigravity-visual-architect.git](https://github.com/xiaoche0907/antigravity-visual-architect.git)
+cd antigravity-visual-architect
+2. 安装依赖
+Bash
+
 npm install
-2. 启动开发服务器
+# 或者
+yarn install
+3. 启动开发服务器
 Bash
 
 npm run dev
-打开浏览器访问 http://localhost:5173 即可使用。
+打开浏览器访问 http://localhost:3000 即可使用。
 
-⚙️ 配置指南 (Configuration)
-添加 API 模型
-点击左侧侧边栏的 “数据库图标” (模型资产)。
+⚙️ 配置指南 (Configuration Guide)
+第一步：添加模型资产
+进入左侧 “模型资产库” 图标。
 
 点击 “添加模型”。
 
-选择提供商：
+选择预设（如 DeepSeek 或 ModelScope）。
 
-Google Gemini: 填入 API Key 即可。
+填入你的 API Key。
 
-OpenAI / Custom: 支持所有兼容 OpenAI 协议的中转站。
+点击 [⚡ 测试连接] 确保连通性，然后保存。
 
-火山引擎 (Volcengine): 系统会自动填充 api/v3 路径，仅需填入 Key 和 Endpoint ID。
+第二步：组建 AI 团队
+进入 “员工管理” 界面。
 
-创建智能体
-点击左侧 “星星图标” (智能体实验室)。
+为 首席策略官 指派一个强逻辑的文本模型（推荐 DeepSeek-V3 或 GPT-4）。
 
-点击 “创建智能体”，使用左侧编辑器编写 System Prompt（支持插入模板）。
+为 视觉执行官 指派一个绘图模型（推荐 Z-Image 或 DALL·E 3）。
 
-点击 “保存并开始对话” 即可进入沉浸式聊天。
+点击保存。
 
-🔒 隐私声明 (Privacy)
-本项目为 纯客户端应用 (Client-Side Only)。
+第三步：启动引擎
+回到 工作台 (Workspace)。
 
-您的 API Key、聊天记录、智能体配置 全部存储在您自己的浏览器缓存 (LocalStorage) 中。
+输入产品名称（如“主动降噪蓝牙耳机”）。
 
-没有任何数据会被发送到我们的服务器（因为根本没有服务器）。
+填写核心卖点。
 
-请勿在公共电脑上使用，或在使用后及时清理浏览器缓存。
+点击 [🚀 启动 A9 架构引擎]，观察 AI 如何协同工作。
 
-📝 License
-MIT License © 2025 Amazon A9 Visual Architect
+🤝 贡献 (Contributing)
+欢迎提交 Issue 和 Pull Request！ 如果你想添加新的模型厂商预设，请修改 src/constants/modelPresets.ts。
+
+📄 开源协议 (License)
+MIT License.
