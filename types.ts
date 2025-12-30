@@ -91,3 +91,10 @@ export interface PersonalAgent {
   createdAt: number;
   updatedAt: number;
 }
+
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'error' | 'system';
+  content: string;
+  attachments?: string[];
+  timestamp: number;
+}

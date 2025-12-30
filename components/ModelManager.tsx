@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ModelConfig, ModelCategory } from '../types/models';
 import { verifyModelConnection } from '../services/aiService';
 import ModelEditForm from './ModelEditForm';
@@ -72,9 +72,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ models, onModelsChange }) =
         setTestingModelId(model.id);
 
         try {
-            // 这里调用实际的测试连接API
-            // 临时使用模拟延迟
-            // 这里调用实际的测试连接API
             const result = await verifyModelConnection(model);
             if (result.success) {
                 showToast(`✅ ${model.name} 连接成功`);
@@ -102,7 +99,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ models, onModelsChange }) =
                 <div className="pb-6 border-b border-[#3c4043] flex justify-between items-end mb-8">
                     <div>
                         <h2 className="text-3xl font-bold text-white mb-3">模型资产管理</h2>
-                        <p className="text-gray-400">统一管理所有文本和图像模型配置</p>
+                        <p className="text-gray-400">统一管理所有文本、图像和多模态模型配置</p>
                     </div>
                     <button
                         onClick={handleAddModel}
@@ -146,6 +143,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ models, onModelsChange }) =
                             </div>
                         </div>
                     </button>
+
+                    <button
+                        onClick={() => setActiveTab('multimodal')}
+                        className={`flex-1 px-6 py-4 rounded-xl border transition-all flex items-center justify-center space-x-3 ${activeTab === 'multimodal'
+                            ? 'bg-orange-500/20 border-orange-500 text-orange-300'
+                            : 'bg-[#1e1f20] border-[#3c4043] text-gray-400 hover:border-gray-500'
+                            }`}
+                    >
+                        <span className="text-2xl">⚡</span>
+                        <div className="text-left">
+                            <div className="font-bold">多模态模型</div>
+                            <div className="text-xs opacity-70">
+                                {models.filter(m => m.category === 'multimodal').length} 个配置
+                            </div>
+                        </div>
+                    </button>
                 </div>
 
                 {/* Model List */}
@@ -153,10 +166,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ models, onModelsChange }) =
                     {filteredModels.length === 0 ? (
                         <div className="bg-[#1e1f20] rounded-2xl border border-dashed border-[#3c4043] p-12 text-center">
                             <div className="text-6xl mb-4">
-                                {activeTab === 'text' ? '📝' : '🎨'}
+                                {activeTab === 'text' ? '📝' : activeTab === 'image' ? '🎨' : '⚡'}
                             </div>
                             <h3 className="text-xl font-semibold text-gray-400 mb-2">
-                                暂无{activeTab === 'text' ? '文本' : '图像'}模型配置
+                                暂无{activeTab === 'text' ? '文本' : activeTab === 'image' ? '图像' : '多模态'}模型配置
                             </h3>
                             <p className="text-sm text-gray-500 mb-6">
                                 点击上方"添加模型"按钮创建第一个配置

@@ -108,6 +108,11 @@ export default defineConfig({
         target: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/proxy\/dashscope/, '')
+      },
+      '/api/proxy/modelscope': {
+        target: 'https://api-inference.modelscope.cn/v1',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/proxy\/modelscope/, '')
       }
     }
   },

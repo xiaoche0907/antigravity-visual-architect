@@ -1,6 +1,6 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { AppConfig, BrainProvider, MarketingStrategy, RoleFocus, ProductInput } from "../types";
+import { AppConfig, BrainProvider, MarketingStrategy, RoleFocus, ProductInput, ChatMessage } from "../types";
 import { ModelConfig } from "../types/models";
 import { ROLE_FOCUS_PROMPTS } from "../constants";
 
@@ -381,9 +381,11 @@ export const verifyModelConnection = async (config: ModelConfig): Promise<{ succ
         console.log(`[Strict Test] Testing ${config.name} (${config.provider})...`);
 
         // === 场景 A: ModelScope 特殊测试 ===
-        if (baseUrl.includes('modelscope.cn') || config.provider === 'modelscope') {
+        // 修正逻辑：只有明确为 'image' 分类且使用 modelscope 的才走生图测试
+        // 文本/多模态模型 (如 ZhipuAI/GLM-4.7) 即使是 modelscope 提供商，也应走下方的 Chat 测试
+        if ((baseUrl.includes('modelscope.cn') || config.provider === 'modelscope') && config.category === 'image') {
             // 策略：通过代理发送一个生图请求，但使用无效参数，看是否返回业务错误(JSON)而非 401(Auth)
-            console.log('[Strict Test] Testing ModelScope via Proxy...');
+            console.log('[Strict Test] Testing ModelScope Image via Proxy...');
             const res = await fetch('/api/modelscope?action=generate', {
                 method: 'POST',
                 headers: {
@@ -406,11 +408,11 @@ export const verifyModelConnection = async (config: ModelConfig): Promise<{ succ
             if (res.status === 404) throw new Error("地址错误：未找到 API 端点");
 
             // 即使是 400 Bad Request (因为我们故意发了错误参数)，也说明连通性没问题，Auth 也没问题
-            return { success: true, msg: "ModelScope 连接成功" };
+            return { success: true, msg: "ModelScope (Image) 连接成功" };
         }
 
-        // === 场景 B: 文本模型 (真·对话测试) ===
-        if (config.category === 'text') {
+        // === 场景 B: 文本/多模态模型 (真·对话测试) ===
+        if (config.category === 'text' || config.category === 'multimodal') {
             // Google Gemini 特殊处理 (如果 SDK 未就绪，使用 REST)
             if (config.provider === 'google') {
                 // 简单检查
@@ -500,4 +502,159 @@ export const fetchAvailableModels = async (
 ): Promise<string[]> => {
     // 简化的默认列表，实际逻辑可以扩展
     return ['gpt-4o', 'gemini-pro', 'claude-3-5-sonnet'];
+};
+
+/**
+ * 统一对话服务 (支持多模态)
+ * 取代 PersonalAgents.tsx 中的内联逻辑
+ */
+export const chatWithAI = async (
+    messages: ChatMessage[],
+    modelConfig: ModelConfig,
+    systemPrompt: string
+): Promise<string> => {
+    console.log('💬 [chatWithAI]', { model: modelConfig.name, msgCount: messages.length });
+
+    if (modelConfig.provider === 'google') {
+        const ai = new GoogleGenAI({ apiKey: modelConfig.apiKey });
+
+        // Construct contents array for history + current
+        const contents = messages.map(msg => {
+            const parts: any[] = [];
+            if (msg.content) parts.push({ text: msg.content });
+
+            if (msg.attachments && msg.attachments.length > 0) {
+                msg.attachments.forEach(img => {
+                    const matches = img.match(/^data:(.+);base64,(.+)$/);
+                    if (matches) {
+                        parts.push({
+                            inlineData: {
+                                mimeType: matches[1],
+                                data: matches[2]
+                            }
+                        });
+                    }
+                });
+            }
+
+            return {
+                role: msg.role === 'user' ? 'user' : 'model',
+                parts: parts
+            };
+        });
+
+        const result = await ai.models.generateContent({
+            model: modelConfig.modelId,
+            contents: contents,
+            config: {
+                systemInstruction: systemPrompt
+            }
+        });
+
+        return result.text?.trim() || "";
+
+    } else {
+        // OpenAI Compatible (including ModelScope, DashScope, etc.)
+        let endpoint = modelConfig.baseUrl;
+
+        // Apply Proxy for ModelScope to avoid CORS
+        if (modelConfig.provider === 'modelscope' || endpoint.includes('modelscope.cn')) {
+            // Check if running in browser environment to avoid affecting server-side (if any)
+            if (typeof window !== 'undefined') {
+                endpoint = '/api/proxy/modelscope';
+            }
+        }
+
+        // Ensure endpoint ends with /chat/completions
+        endpoint = endpoint.endsWith('/chat/completions')
+            ? endpoint
+            : `${endpoint.replace(/\/$/, '')}/chat/completions`;
+
+        const apiMessages: any[] = [
+            { role: 'system', content: systemPrompt }
+        ];
+
+        // Format history
+        messages.forEach((msg, index) => {
+            if (msg.role === 'error') return;
+
+            let content: any = msg.content;
+            const isLastMessage = index === messages.length - 1;
+
+            // If message has attachments
+            if (msg.attachments && msg.attachments.length > 0) {
+                // STRATEGY: Smart Context Pruning
+                // Only send Base64 image data for the LAST message (current turn).
+                // For history messages, strip the heavy image data to avoid "Payload Too Large" (HTTP 500).
+                // We assume the model 'remembers' the image content via its previous textual response.
+
+                if (isLastMessage) {
+                    content = [];
+                    if (msg.content.trim()) {
+                        content.push({ type: 'text', text: msg.content });
+                    }
+                    msg.attachments.forEach(img => {
+                        content.push({
+                            type: 'image_url',
+                            image_url: { url: img }
+                        });
+                    });
+                } else {
+                    // For history: Keep text only, append a note
+                    content = msg.content;
+                    if (!content || content.trim() === '') {
+                        content = '[Image uploaded in previous turn]';
+                    } else {
+                        content += ' [Image context preserved]';
+                    }
+                }
+            }
+
+            apiMessages.push({
+                role: msg.role,
+                content: content
+            });
+        });
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${modelConfig.apiKey}`
+            },
+            body: JSON.stringify({
+                model: modelConfig.modelId,
+                messages: apiMessages,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+
+            // 尝试解析 JSON 错误信息
+            let friendlyMsg = '';
+            try {
+                const errJson = JSON.parse(errText);
+                const code = errJson.error?.code;
+                const msg = errJson.error?.message;
+
+                // Zhipu / ModelScope 常见鉴权错误
+                if (response.status === 401 || code === '1000' || code === '1001') {
+                    friendlyMsg = '身份验证失败 (API Key 无效或过期)。请在模型管理中检查您的 API Key。';
+                } else if (msg) {
+                    friendlyMsg = msg;
+                }
+            } catch (e) {
+                // Ignore json parse error
+            }
+
+            // 如果返回 500 且无内容，通常是 Payload 过大或上游崩溃
+            const errorMsg = friendlyMsg || errText || (response.status === 500 ? '请求可能过大或服务器内部错误 (Payload Too Large?)' : 'Unknown Error');
+            throw new Error(friendlyMsg ? errorMsg : `HTTP ${response.status}: ${errorMsg}`);
+        }
+
+        const data = await response.json();
+        return data.choices?.[0]?.message?.content || "";
+    }
 };

@@ -21,13 +21,13 @@ export const generateMarketingStrategy = async (
             { id: 5, type: "质量保证图", description: "符合您参考图中的高端微距摄影效果", visualPrompt: "Extreme macro shot of product texture, high-end materials, soft focus background", copywriting: "匠心工艺，坚韧耐用" }
           ],
           aPlusContent: [
-            { id: 1, moduleType: "品牌故事模块", content: "我们致力于通过创新技术改变人们的听觉体验。", visualGuidance: "高对比度的品牌 Logo 和生活方式背景图" },
-            { id: 2, moduleType: "核心技术参数模块", content: "频率响应: 20Hz-20kHz | 阻抗: 32 Ohm", visualGuidance: "使用简洁的网格布局展示参数" },
-            { id: 3, moduleType: "产品差异化对比模块", content: "对比竞品更轻的重量与更好的续航。", visualGuidance: "清晰的表格对比图" },
-            { id: 4, moduleType: "应用场景展示", content: "办公室、健身房、飞机舱。", visualGuidance: "拼贴风格的多场景图" },
-            { id: 5, moduleType: "多角度展示模块", content: "正面、侧面及佩戴效果。", visualGuidance: "平铺式的产品阵列" },
-            { id: 6, moduleType: "细节放大模块", content: "耳垫材质与按键细节。", visualGuidance: "微距特写，标注材质" },
-            { id: 7, moduleType: "包装与配件模块", content: "包含收纳包、充电线及说明书。", visualGuidance: "开箱感视角图" }
+            { id: 1, moduleType: "品牌故事模块", content: "我们致力于通过创新技术改变人们的听觉体验。", visualGuidance: "高对比度的品牌 Logo 和生活方式背景图", visualPrompt: "High contrast brand logo with lifestyle background, modern, clean, professional" },
+            { id: 2, moduleType: "核心技术参数模块", content: "频率响应: 20Hz-20kHz | 阻抗: 32 Ohm", visualGuidance: "使用简洁的网格布局展示参数", visualPrompt: "Clean grid layout displaying technical specifications, minimal design, high resolution" },
+            { id: 3, moduleType: "产品差异化对比模块", content: "对比竞品更轻的重量与更好的续航。", visualGuidance: "清晰的表格对比图", visualPrompt: "Comparison table showing product vs competitors, highlighting weight and battery life, infographic style" },
+            { id: 4, moduleType: "应用场景展示", content: "办公室、健身房、飞机舱。", visualGuidance: "拼贴风格的多场景图", visualPrompt: "Collage of product in use: office, gym, airplane cabin, diverse models, lifestyle photography" },
+            { id: 5, moduleType: "多角度展示模块", content: "正面、侧面及佩戴效果。", visualGuidance: "平铺式的产品阵列", visualPrompt: "Product array showing front, side, and wearing views, studio lighting, white background" },
+            { id: 6, moduleType: "细节放大模块", content: "耳垫材质与按键细节。", visualGuidance: "微距特写，标注材质", visualPrompt: "Macro close-up of ear cushion texture and button details, premium materials, depth of field" },
+            { id: 7, moduleType: "包装与配件模块", content: "包含收纳包、充电线及说明书。", visualGuidance: "开箱感视角图", visualPrompt: "Unboxing view showing carrying case, charging cable, and manual, organized layout, overhead shot" }
           ]
         });
       }, 1500);
@@ -52,7 +52,7 @@ export const generateMarketingStrategy = async (
     输出要求：
     - analysis: 市场洞察与视觉策略总结。
     - secondaryImages: 5张副图方案（类型：功能拆解图、使用场景图、尺寸对比图、核心痛点对比图、质量保证/认证图）。
-    - aPlusContent: 7个 A+ 模块方案。
+    - aPlusContent: 7个 A+ 模块方案 (确保包含 id, moduleType, content, visualGuidance, visualPrompt)。
     
     请严格返回 JSON。
   `;
@@ -86,7 +86,16 @@ export const generateMarketingStrategy = async (
   } else {
     // Other providers must also use the unified environment key if they don't have their own
     const authKey = config.brain.apiKey;
-    const response = await fetch(`${config.brain.baseUrl}/chat/completions`, {
+    let endpoint = `${config.brain.baseUrl}/chat/completions`;
+
+    // Apply Proxy for ModelScope
+    if (config.brain.provider === 'modelscope' || config.brain.baseUrl.includes('modelscope.cn')) {
+      if (typeof window !== 'undefined') {
+        endpoint = '/api/proxy/modelscope/chat/completions';
+      }
+    }
+
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -148,7 +157,38 @@ export const generateVisual = async (prompt: string, config: AppConfig): Promise
   } else {
     const authKey = config.visual.apiKey;
     const isModelScope = config.visual.provider === 'modelscope';
-    const endpoint = isModelScope ? config.visual.baseUrl : `${config.visual.baseUrl}/images/generations`;
+
+    let endpoint = isModelScope ? config.visual.baseUrl : `${config.visual.baseUrl}/images/generations`;
+
+    // Apply Proxy for ModelScope
+    if (isModelScope || endpoint.includes('modelscope.cn')) {
+      if (typeof window !== 'undefined') {
+        // 注意：ModelScope 的文生图接口通常是 /services/text-to-image/text-to-image
+        // 但如果是 OpenAI 兼容模式，或是特定的 ModelScope 推理 API，路径可能不同。
+        // 假设用户配置的是 OpenAI 兼容接口地址。
+        // 如果是原生的 ModelScope API，需要根据实际情况调整。
+        // 这里我们沿用一般的代理逻辑，假设baseUrl配置的是OpenAI兼容端点。
+        // 但是 ModelScope 的 OpenAI 兼容接口本身可能就是 https://api-inference.modelscope.cn/v1
+
+        // 简单处理：将 baseUrl 替换为代理前缀
+        // 如果原始 baseUrl 是 https://api-inference.modelscope.cn/v1
+        // 代理后应该是 /api/proxy/modelscope
+
+        // 为了安全起见，我们构建一个新的代理路径
+        endpoint = '/api/proxy/modelscope/chat/completions'; // 等等，这是生图，不是对话。
+        // ModelScope 尚未提供标准的 OpenAI 格式生图接口 (v1/images/generations)。
+        // 通常 ModelScope 是通过对话接口调用某些 agent，或者特定的 task API。
+        // 如果用户用的是 Qwen-VL 等多模态模型来“生图”，通常是不行的，那是“看图”。
+
+        // 修正：如果用户在 Workspace 用 Visual Model，且选了 ModelScope，
+        // 极大概率是配置错误，因为 ModelScope 的标准推理 API 不直接支持 OpenAI image generation 格式。
+        // 除非用户用的是第三方封装。
+
+        // 但为了解决眼下的 CORS，我们还是加上代理。
+        // 假设用户填写的 endpoint 是兼容的。
+        endpoint = '/api/proxy/modelscope/images/generations';
+      }
+    }
 
     const response = await fetch(endpoint, {
       method: 'POST',

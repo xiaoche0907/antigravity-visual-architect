@@ -6,6 +6,7 @@ import {
     PROVIDER_DEFAULTS,
     RECOMMENDED_TEXT_MODELS,
     RECOMMENDED_IMAGE_MODELS,
+    RECOMMENDED_MULTIMODAL_MODELS,
     generateModelId,
     validateModelConfig
 } from '../types/models';
@@ -217,7 +218,9 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
                     console.warn('DashScope 模型列表获取失败，使用推荐列表:', error);
                     models = formData.category === 'text'
                         ? RECOMMENDED_TEXT_MODELS.aliyun
-                        : RECOMMENDED_IMAGE_MODELS.aliyun;
+                        : formData.category === 'image'
+                            ? RECOMMENDED_IMAGE_MODELS.aliyun
+                            : RECOMMENDED_MULTIMODAL_MODELS.aliyun;
                 }
             }
 
@@ -273,8 +276,11 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
                     // Fallback: 使用推荐列表
                     console.warn('火山引擎模型列表获取失败，使用推荐列表:', error);
                     models = formData.category === 'text'
+                    models = formData.category === 'text'
                         ? RECOMMENDED_TEXT_MODELS.volcengine
-                        : RECOMMENDED_IMAGE_MODELS.volcengine;
+                        : formData.category === 'image'
+                            ? RECOMMENDED_IMAGE_MODELS.volcengine
+                            : RECOMMENDED_MULTIMODAL_MODELS.volcengine;
 
                     // 特别提示：火山引擎通常使用 Endpoint ID
                     setErrors(['💡 火山引擎通常使用推理接入点 ID (Endpoint ID) 作为模型 ID，请手动输入或从下方推荐列表选择']);
@@ -300,7 +306,17 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
                     }
 
                     const data = await response.json();
-                    models = (data.data || data.models || []).map((m: any) => m.id || m.name);
+                    let fetchedModels = (data.data || data.models || []).map((m: any) => m.id || m.name);
+
+                    // 如果是多模态分类，过滤掉非视觉模型 (必须包含 vl, vision, 4v, 4o 等关键词)
+                    if (formData.category === 'multimodal') {
+                        fetchedModels = fetchedModels.filter((id: string) => {
+                            const lower = id.toLowerCase();
+                            return lower.includes('vl') || lower.includes('vision') || lower.includes('4v') || lower.includes('4o');
+                        });
+                    }
+
+                    models = fetchedModels;
 
                 } catch (error) {
                     console.warn('ModelScope 列表获取失败，回退到推荐列表', error);
@@ -309,7 +325,9 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
                 // 合并推荐列表 (去重)
                 const recommended = formData.category === 'text'
                     ? RECOMMENDED_TEXT_MODELS.modelscope
-                    : RECOMMENDED_IMAGE_MODELS.modelscope;
+                    : formData.category === 'image'
+                        ? RECOMMENDED_IMAGE_MODELS.modelscope
+                        : RECOMMENDED_MULTIMODAL_MODELS.modelscope;
 
                 models = Array.from(new Set([...models, ...recommended]));
 
@@ -348,7 +366,9 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
                     console.warn('通用兼容接口模型列表获取失败，使用推荐示例:', error);
                     models = formData.category === 'text'
                         ? RECOMMENDED_TEXT_MODELS['openai-compatible']
-                        : RECOMMENDED_IMAGE_MODELS['openai-compatible'];
+                        : formData.category === 'image'
+                            ? RECOMMENDED_IMAGE_MODELS['openai-compatible']
+                            : RECOMMENDED_MULTIMODAL_MODELS['openai-compatible'];
 
                     // 提示用户可以手动输入
                     setErrors(['💡 API 不支持模型列表，已显示常见模型示例。您也可以直接手动输入模型 ID']);
@@ -371,7 +391,9 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
             // 即使失败，也显示推荐列表作为fallback
             const fallbackModels = formData.category === 'text'
                 ? RECOMMENDED_TEXT_MODELS[formData.provider || 'aliyun']
-                : RECOMMENDED_IMAGE_MODELS[formData.provider || 'aliyun'];
+                : formData.category === 'image'
+                    ? RECOMMENDED_IMAGE_MODELS[formData.provider || 'aliyun']
+                    : RECOMMENDED_MULTIMODAL_MODELS[formData.provider || 'aliyun'];
 
             if (fallbackModels && fallbackModels.length > 0) {
                 setAvailableModels(fallbackModels);
@@ -421,7 +443,7 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
                                 {editingModel ? '编辑模型配置' : '添加新模型'}
                             </h2>
                             <p className="text-sm text-gray-400">
-                                配置 {formData.category === 'text' ? '文本' : '图像'} 模型资产
+                                配置 {formData.category === 'text' ? '文本' : formData.category === 'image' ? '图像' : '多模态'} 模型资产
                             </p>
                         </div>
                         <button

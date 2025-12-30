@@ -4,7 +4,8 @@
  */
 
 // 模型分类：严格区分文本和图像
-export type ModelCategory = 'text' | 'image';
+// 模型分类：严格区分文本、图像和多模态
+export type ModelCategory = 'text' | 'image' | 'multimodal';
 
 // 提供商类型
 export type ProviderType = 'google' | 'aliyun' | 'openai' | 'volcengine' | 'modelscope' | 'openai-compatible' | 'custom';
@@ -60,6 +61,21 @@ export const PROVIDER_DEFAULTS: Record<ProviderType, { baseUrl: string; name: st
     }
 };
 
+// 暂时空置，稍后在 UI 中处理
+export const RECOMMENDED_MULTIMODAL_MODELS: Record<ProviderType, string[]> = {
+    google: ['gemini-1.5-pro', 'gemini-1.5-flash'],
+    aliyun: ['qwen-vl-max', 'qwen-vl-plus'],
+    openai: ['gpt-4o', 'gpt-4-turbo'],
+    volcengine: [],
+    modelscope: [
+        'Qwen/Qwen3-VL-235B-A22B-Instruct',
+        'Qwen/Qwen2-VL-72B-Instruct',
+        'Qwen/Qwen2-VL-7B-Instruct'
+    ],
+    'openai-compatible': [],
+    custom: []
+};
+
 /**
  * 推荐的文本模型列表（按提供商）
  */
@@ -103,11 +119,13 @@ export function createDefaultModelConfig(
     const defaults = PROVIDER_DEFAULTS[provider];
     const recommendedModels = category === 'text'
         ? RECOMMENDED_TEXT_MODELS[provider]
-        : RECOMMENDED_IMAGE_MODELS[provider];
+        : category === 'image'
+            ? RECOMMENDED_IMAGE_MODELS[provider]
+            : RECOMMENDED_MULTIMODAL_MODELS[provider];
 
     return {
         id: generateModelId(),
-        name: `${defaults.name} - ${category === 'text' ? '文本' : '图像'}`,
+        name: `${defaults.name} - ${category === 'text' ? '文本' : category === 'image' ? '图像' : '多模态'}`,
         category,
         provider,
         baseUrl: defaults.baseUrl,

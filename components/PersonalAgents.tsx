@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { PersonalAgent } from '../types';
+import { PersonalAgent, ChatMessage } from '../types';
 import { ModelConfig } from '../types/models';
-import { GoogleGenAI } from '@google/genai';
+import { chatWithAI } from '../services/aiService';
 import MarkdownRenderer from './MarkdownRenderer';
 
 interface PersonalAgentsProps {
@@ -35,12 +35,7 @@ const EXPERT_TEMPLATE = `# Role: [角色名称]
 ## Initialization
 作为 [角色名称]，我将竭诚为您服务。请告诉我您的需求。`;
 
-interface ChatMessage {
-    role: 'user' | 'assistant' | 'error';
-    content: string;
-    attachments?: string[];
-    timestamp: number;
-}
+
 
 // 会话状态接口
 interface AgentSession {
@@ -123,7 +118,7 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
     const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     // 计算属性
-    const enabledTextModels = modelConfigs.filter(m => m.category === 'text' && m.isEnabled);
+    const enabledTextModels = modelConfigs.filter(m => (m.category === 'text' || m.category === 'multimodal') && m.isEnabled);
     const selectedAgent = agents.find(a => a.id === selectedAgentId) || null;
 
     // 防抖效果：当用户停止输入 500ms 后，更新预览
@@ -344,81 +339,11 @@ const PersonalAgents: React.FC<PersonalAgentsProps> = ({
         setIsGenerating(true);
 
         try {
-            let responseText = '';
-
-            if (selectedModel.provider === 'google') {
-                const ai = new GoogleGenAI({ apiKey: selectedModel.apiKey });
-
-                // Construct Google Parts
-                const parts: any[] = [];
-                if (userInput.trim()) {
-                    parts.push({ text: userInput });
-                }
-                // Add images
-                userMsg.attachments?.forEach(img => {
-                    // Extract base64 info: data:image/jpeg;base64,....
-                    const matches = img.match(/^data:(.+);base64,(.+)$/);
-                    if (matches) {
-                        parts.push({
-                            inlineData: {
-                                mimeType: matches[1],
-                                data: matches[2]
-                            }
-                        });
-                    }
-                });
-
-                const response = await ai.models.generateContent({
-                    model: selectedModel.modelId,
-                    contents: { parts },
-                    config: { systemInstruction: finalSystemPrompt }
-                });
-                responseText = response.text?.trim() || '[空响应]';
-
-            } else {
-                // OpenAI Compatible
-                const endpoint = selectedModel.baseUrl.endsWith('/chat/completions')
-                    ? selectedModel.baseUrl
-                    : `${selectedModel.baseUrl.replace(/\/$/, '')}/chat/completions`;
-
-                // Construct OpenAI Messages
-                let messageContent: any = userInput;
-
-                if (userMsg.attachments && userMsg.attachments.length > 0) {
-                    messageContent = [];
-                    if (userInput.trim()) {
-                        messageContent.push({ type: 'text', text: userInput });
-                    }
-                    userMsg.attachments.forEach(img => {
-                        messageContent.push({
-                            type: 'image_url',
-                            image_url: { url: img }
-                        });
-                    });
-                }
-
-                const messages = [
-                    { role: 'system', content: finalSystemPrompt },
-                    { role: 'user', content: messageContent }
-                ];
-
-                const res = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${selectedModel.apiKey}`
-                    },
-                    body: JSON.stringify({
-                        model: selectedModel.modelId,
-                        messages,
-                        temperature: 0.7
-                    })
-                });
-
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
-                responseText = data.choices?.[0]?.message?.content || '[空响应]';
-            }
+            const responseText = await chatWithAI(
+                [...chatMessages, userMsg],
+                selectedModel,
+                finalSystemPrompt
+            );
 
             setChatMessages(prev => [...prev, { role: 'assistant', content: responseText, timestamp: Date.now() }]);
 
