@@ -82,25 +82,31 @@ export const generateMarketingStrategy = async (
     const focusPrompt = ROLE_FOCUS_PROMPTS[roleFocus];
     const systemInstruction = `${config.brain.systemInstruction || ''}\n\n当前视角: ${focusPrompt}`;
 
+    // 即使 System Instruction 已定义，User Prompt 仍需明确传入数据和 Schema 约束
     const promptText = `
-    作为亚马逊 A9 算法专家，请根据以下产品信息生成视觉营销方案。
-    必须返回纯 JSON 格式。
+    Input Data:
+    - Product Name: [Implied from context]
+    - USPs: ${input.usps}
+    - Target Audience: ${input.targetAudience}
+    - Competitor Pain Points: ${input.competitorPainPoints}
+    - Specs: ${input.specs}
 
-    核心卖点: ${input.usps}
-    目标受众: ${input.targetAudience}
-    竞品痛点: ${input.competitorPainPoints}
-    参数: ${input.specs}
+    Action:
+    Based on your SYSTEM INSTRUCTION (Visual Architect Role), generate the "MarketingStrategy" JSON object.
 
-    JSON 结构要求:
+    JSON Schema Enforcement:
     {
-      "analysis": "Markdown格式的市场洞察与策略分析 (300字以上)",
+      "analysis": "Markdown report of A9 strategy & visual psychology analysis (300+ words).",
       "secondaryImages": [
-        { "id": 1, "type": "图片类型", "description": "画面描述", "visualPrompt": "英文视觉提示词", "copywriting": "营销文案" },
-        ... (共5张)
+        // Generate exactly 5 items.
+        // 'visualPrompt' MUST follow the Nanobannan structure defined in your system prompt AND include the text rendering instruction 'The text "..." is written...'.
+        { "id": 1, "type": "Theme/Type", "description": "Strategy explanation", "visualPrompt": "Detailed English Prompt for DALL-E/Ideogram", "copywriting": "Short headline text" },
+        ...
       ],
       "aPlusContent": [
-        { "id": 1, "moduleType": "模块类型", "content": "文本内容", "visualGuidance": "中文视觉指导", "visualPrompt": "英文生图提示词 (Detailed English Midjourney Prompt)" },
-         ... (共5-7个)
+        // Generate exactly 7 items.
+        { "id": 1, "moduleType": "Module Type", "content": "Module content explanation", "visualGuidance": "Chinese visual guide", "visualPrompt": "Detailed English Prompt" },
+        ...
       ]
     }
     `;
@@ -163,18 +169,28 @@ export const generateMarketingStrategy = async (
                 messages[1] = { role: "user", content: userContent };
             }
 
+            const isReasoningModel = textModel.modelId.toLowerCase().includes('reasoner') ||
+                textModel.modelId.toLowerCase().includes('r1') ||
+                textModel.modelId.toLowerCase().includes('thinking');
+
+            const requestBody: any = {
+                model: textModel.modelId,
+                messages,
+                temperature: 0.7
+            };
+
+            // ⚠️ Reasoning models (like DeepSeek-R1) often conflict with 'json_object' mode
+            if (!isReasoningModel) {
+                requestBody.response_format = { type: "json_object" };
+            }
+
             const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${textModel.apiKey}`
                 },
-                body: JSON.stringify({
-                    model: textModel.modelId,
-                    messages,
-                    temperature: 0.7,
-                    response_format: { type: "json_object" }
-                })
+                body: JSON.stringify(requestBody)
             });
 
             if (!res.ok) {
@@ -258,8 +274,8 @@ const pollModelScopeTask = async (taskId: string, apiKey: string): Promise<strin
     throw new Error("ModelScope 生成超时 (60s)");
 };
 
-export const generateVisual = async (prompt: string, imageModel: ModelConfig | null, config: AppConfig): Promise<string> => {
-    if (config.mockMode) return `https://picsum.photos/seed/${Math.floor(Math.random() * 1000)}/1024/1024`;
+export const generateVisual = async (prompt: string, imageModel: ModelConfig | null, config: AppConfig, aspectRatio: '1:1' | '16:9' = '1:1', resolution: '1K' | '2K' | '4K' = '1K'): Promise<string> => {
+    if (config.mockMode) return `https://picsum.photos/seed/${Math.floor(Math.random() * 1000)}/${aspectRatio === '1:1' ? '1024/1024' : '1024/576'}`;
 
     // 🛡️ 防御性检查：确保传入的是图像模型
     if (!imageModel) {
@@ -278,13 +294,81 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
         throw new Error(`模型类别错误：${imageModel.name} 是 ${imageModel.category} 模型，不能用于图像生成`);
     }
 
+    // 📐 Resolution Mapping Logic
+    let size = "1024x1024"; // Default 1:1
+    const isDallE3 = imageModel.modelId.includes('dall-e-3');
+
+    if (aspectRatio === '16:9') {
+        if (imageModel.provider === 'modelscope' || imageModel.baseUrl?.includes('modelscope.cn')) {
+            size = "1024x576"; // ModelScope often prefers this or 1280x720
+        } else if (isDallE3) {
+            size = "1792x1024"; // DALL-E 3 Standard Landscape
+        } else if (imageModel.provider === 'aliyun' || imageModel.modelId.includes('wanx')) {
+            size = "1280x720"; // Wanx Landscape
+        } else {
+            size = "1024x576"; // Generic fallback
+        }
+    } else {
+        // 1:1
+        size = "1024x1024";
+    }
+
     console.log('🎨 [generateVisual] 开始生成图像', {
         model: imageModel.name,
         provider: imageModel.provider,
+        aspectRatio,
+        resolution,
+        targetSize: size,
         promptLength: prompt.length
     });
 
     try {
+        // === ✅ 新增：接口AI (Jiekou.ai) 专用通道 ===
+        if (imageModel.provider === 'jiekou' || imageModel.baseUrl?.includes('jiekou.ai')) {
+            console.log('🔵 [generateVisual] Detected Jiekou.ai API...');
+
+            let targetUrl = imageModel.baseUrl.replace(/\/$/, '');
+            // 如果 URL 没包含模型名且模型名存在，手动拼上去 (Standard Jiekou pattern)
+            // Fix: User instruction implies modelId should be part of URL path
+            if (imageModel.modelId && !targetUrl.endsWith(imageModel.modelId)) {
+                targetUrl = `${targetUrl}/${imageModel.modelId}`;
+            }
+
+            console.log(`📡 [generateVisual] Jiekou URL: ${targetUrl}`);
+
+            const res = await fetch(targetUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': imageModel.apiKey.startsWith('Bearer') ? imageModel.apiKey : `Bearer ${imageModel.apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    prompt: prompt,
+                    aspect_ratio: aspectRatio, // Using the argument passed to function
+                    size: resolution, // Jiekou (Gemini) requires specific enum: 1K, 2K, 4K.
+                    model: imageModel.modelId // Some Jiekou endpoints might need it in body too
+                }),
+                mode: 'cors'
+            });
+
+            if (!res.ok) {
+                const errText = await res.text();
+                console.error(`❌ [generateVisual] Jiekou API 请求失败: ${res.status} - ${errText}`);
+                throw new Error(`Jiekou API Request Failed: ${res.status} - ${errText}`);
+            }
+
+            const data = await res.json();
+            // User provided: url || data[0].url || output_url
+            const imageUrl = data.url || data.data?.[0]?.url || data.output_url;
+
+            if (!imageUrl) {
+                throw new Error(`Jiekou API returned success but no image URL found: ${JSON.stringify(data)}`);
+            }
+
+            console.log('✅ [generateVisual] Jiekou 图像生成成功:', imageUrl.substring(0, 50) + '...');
+            return imageUrl;
+        }
+
         // === ✅ ModelScope 专用通道 (通过代理 API, 异步轮询模式) ===
         if (imageModel.baseUrl?.includes('modelscope.cn')) {
             console.log('🔵 [generateVisual] 检测到 ModelScope API，使用代理进入异步轮询模式...');
@@ -300,7 +384,7 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
                 body: JSON.stringify({
                     model: imageModel.modelId || 'Tongyi-MAI/Z-Image-Turbo',
                     prompt: prompt,
-                    size: '1024x576'  // 16:9 横图尺寸
+                    size: size
                 })
             });
 
@@ -349,7 +433,7 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
                 model: imageModel.modelId,
                 prompt,
                 n: 1,
-                size: "1024x1024"
+                size: size
             })
         });
 
@@ -367,7 +451,7 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
 
     } catch (e: any) {
         console.error('❌ [generateVisual] 图像生成异常:', e);
-        throw new Error(`图像生成失败: ${e.message}`);
+        throw e; // Rethrow to let caller handle the UI state
     }
 };
 

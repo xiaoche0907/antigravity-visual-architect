@@ -51,6 +51,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
     // Local UI State
     const [showHistory, setShowHistory] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [imageResolution, setImageResolution] = useState<'1K' | '2K' | '4K'>('1K');
 
     const showToast = (msg: string) => {
         setToastMessage(msg);
@@ -125,14 +126,10 @@ const Workspace: React.FC<WorkspaceProps> = ({
             setStrategy(strategyData);
             console.log('✅ 策略分析完成。');
 
-            // === Step 2: 视觉画师工作 ===
+            // === Step 2: 视觉画师工作 (现在改为手动触发) ===
             if (mode === WorkflowMode.DIRECT_GENERATION) {
-                console.log(`🎨 [Step 2] 画师 [${visualConfig?.name || 'Mock'}] 接收指令...`);
-                setLoadingState('generating');
-                showToast('🎨 视觉执行官正在绘制方案...');
-
-                // 调用生图逻辑 (Brain -> Painter 传递)
-                await handleGenerateAllImages(strategyData);
+                console.log(`🎨 [Step 2] 策略已就绪，等待手动触发视觉生成...`);
+                showToast('✅ 策略方案已生成！请点击下方卡片生成图片');
             } else {
                 showToast('✅ 策略方案已生成！');
             }
@@ -151,78 +148,173 @@ const Workspace: React.FC<WorkspaceProps> = ({
         }
     };
 
-    const handleGenerateAllImages = async (currentStrategy: MarketingStrategy) => {
-        // 再次获取并验证配置 (Double Check)
+    // === 手动触发：单张生图 ===
+    const handleGenerateSingleImage = async (type: 'secondary' | 'aplus', index: number) => {
+        if (!strategy) return;
+
+        // 验证图像模型配置
         const visualConfig = modelConfigs.find(m => m.id === selectedVisualModelId);
         if (!config.mockMode && (!visualConfig || !visualConfig.isEnabled)) {
-            throw new Error("图像模型配置在生图阶段失效");
+            alert("⚠️ 图像模型未配置或已禁用，请检查设置。");
+            return;
         }
 
-        console.log('🎨 [handleGenerateAllImages] 视觉执行官就位:', visualConfig?.name);
+        const updated = { ...strategy };
 
-        const updated = { ...currentStrategy };
-
-        // 状态更新辅助函数
-        const updateState = () => setStrategy({ ...updated });
+        // 设置加载状态
+        if (type === 'secondary') {
+            const item = updated.secondaryImages[index];
+            if (!item) return;
+            item.generatedImageUrl = "PENDING:正在绘制...";
+        } else {
+            const item = updated.aPlusContent[index];
+            if (!item) return;
+            item.generatedImageUrl = "PENDING:正在绘制...";
+        }
+        setStrategy({ ...updated });
 
         try {
-            // === 1. 并行生成副图 (Secondary Images) ===
-            console.log(`🖼️ [Painter] 并行绘制 ${updated.secondaryImages.length} 张副图...`);
+            console.log(`🎨 [Manual] Generating ${type} image #${index + 1} with ${imageResolution}...`);
 
-            const secondaryPromises = updated.secondaryImages.map(async (item, i) => {
-                console.log(`  📸 [Secondary #${i + 1}] 启动任务: ${item.type}`);
+            let prompt = '';
+            let aspectRatio = '';
 
-                // 核心逻辑：从策略大脑提取 "visualPrompt"
-                let prompt = item.visualPrompt;
+            // 准备 Prompt & 参数 (Split logic to avoid union type errors)
+            if (type === 'secondary') {
+                const item = updated.secondaryImages[index];
+                prompt = item.visualPrompt;
                 if (!prompt || prompt.length < 5) {
-                    console.warn(`  ⚠️ Prompt 缺失，使用兜底描述`);
                     prompt = `Professional commercial photography of ${input.usps}, ${item.description}, 8k resolution`;
                 }
-
-                try {
-                    const url = await generateVisual(prompt, visualConfig || null, config);
-                    updated.secondaryImages[i].generatedImageUrl = url;
-                    updateState(); // 实时更新
-                    console.log(`  ✅ [Secondary #${i + 1}] 完成`);
-                } catch (imgErr) {
-                    console.error(`  ❌ 图片生成失败 [${item.id}]:`, imgErr);
-                }
-            });
-
-            // === 2. 并行生成 A+ 内容图片 ===
-            console.log(`📑 [Painter] 并行绘制 ${updated.aPlusContent.length} 张 A+ 配图...`);
-
-            const aPlusPromises = updated.aPlusContent.map(async (item, i) => {
-                console.log(`  📄 [A+ #${i + 1}] 启动任务: ${item.moduleType}`);
-
-                // NEW: 优先使用 visualPrompt (AI 生成的专用 Prompt)，回退到 visualGuidance
-                let prompt = item.visualPrompt;
+                aspectRatio = '1:1';
+            } else {
+                const item = updated.aPlusContent[index];
+                prompt = item.visualPrompt;
                 if (!prompt || prompt.length < 5) {
-                    prompt = item.visualGuidance;
+                    prompt = item.visualGuidance || `High quality product image for Amazon A+ content, ${item.moduleType}, ${input.usps}`;
                 }
-                if (!prompt || prompt.length < 5) {
-                    prompt = `High quality product image for Amazon A+ content, ${item.moduleType}, ${input.usps}`;
-                }
+                aspectRatio = '16:9';
+            }
 
-                try {
-                    const url = await generateVisual(prompt, visualConfig || null, config);
-                    updated.aPlusContent[i].generatedImageUrl = url;
-                    updateState(); // 实时更新
-                    console.log(`  ✅ [A+ #${i + 1}] 完成`);
-                } catch (imgErr) {
-                    console.error(`  ❌ A+ 图片生成失败 [${item.id}]:`, imgErr);
-                }
-            });
+            // 调用 API
+            const url = await generateVisual(prompt, visualConfig || null, config, aspectRatio as any, imageResolution);
 
-            // 等待所有任务完成 (Promise.allSettled 也可以，但这里我们已经在内部 catch 了错误)
-            await Promise.all([...secondaryPromises, ...aPlusPromises]);
+            // 更新结果
+            if (type === 'secondary') {
+                updated.secondaryImages[index].generatedImageUrl = url;
+            } else {
+                updated.aPlusContent[index].generatedImageUrl = url;
+            }
 
-            showToast('✨ 所有视觉资产生成完毕！');
+            setStrategy({ ...updated });
+            console.log(`✅ [Manual] Image #${index + 1} generated.`);
 
         } catch (error: any) {
-            console.error("❌ [Image Generation] 致命错误:", error);
-            throw error; // 向上抛出，中断流程
+            console.error(`❌ [Manual] Failed to generate image #${index + 1}:`, error);
+            const errMsg = `ERROR:${error.message || 'Unknown Error'}`;
+            if (type === 'secondary') {
+                updated.secondaryImages[index].generatedImageUrl = errMsg;
+            } else {
+                updated.aPlusContent[index].generatedImageUrl = errMsg;
+            }
+            setStrategy({ ...updated });
         }
+    };
+
+    // === 手动触发：批量生图 (生成当前 Tab 下所有未完成的) ===
+    const handleGenerateBatch = async (type: 'secondary' | 'aplus') => {
+        if (!strategy) return;
+
+        // 验证图像模型配置
+        const visualConfig = modelConfigs.find(m => m.id === selectedVisualModelId);
+        if (!config.mockMode && (!visualConfig || !visualConfig.isEnabled)) {
+            alert("⚠️ 图像模型未配置或已禁用，请检查设置。");
+            return;
+        }
+
+        const updated = { ...strategy };
+
+        // 筛选需要生成的索引
+        const indicesToGenerate: number[] = [];
+        const list = type === 'secondary' ? updated.secondaryImages : updated.aPlusContent;
+
+        list.forEach((item, idx) => {
+            // Common property access safe here or just checks emptiness
+            if (!item.generatedImageUrl || item.generatedImageUrl.startsWith('ERROR:')) {
+                indicesToGenerate.push(idx);
+            }
+        });
+
+        if (indicesToGenerate.length === 0) {
+            showToast("✨ 当前没有需要生成的图片");
+            return;
+        }
+
+        showToast(`🚀 开始批量生成 ${indicesToGenerate.length} 张图片 (${imageResolution})...`);
+
+        // 设置 Loading
+        indicesToGenerate.forEach(idx => {
+            if (type === 'secondary') {
+                updated.secondaryImages[idx].generatedImageUrl = "PENDING:队列中...";
+            } else {
+                updated.aPlusContent[idx].generatedImageUrl = "PENDING:队列中...";
+            }
+        });
+        setStrategy({ ...updated });
+
+        const promises = indicesToGenerate.map(async (idx) => {
+            // Set running state individually
+            if (type === 'secondary') {
+                updated.secondaryImages[idx].generatedImageUrl = "PENDING:正在绘制...";
+            } else {
+                updated.aPlusContent[idx].generatedImageUrl = "PENDING:正在绘制...";
+            }
+            setStrategy({ ...updated });
+
+            try {
+                let prompt = '';
+                let aspectRatio = '';
+
+                if (type === 'secondary') {
+                    const item = updated.secondaryImages[idx];
+                    prompt = item.visualPrompt;
+                    if (!prompt || prompt.length < 5) {
+                        prompt = `Professional commercial photography of ${input.usps}, ${item.description}, 8k resolution`;
+                    }
+                    aspectRatio = '1:1';
+                } else {
+                    const item = updated.aPlusContent[idx];
+                    prompt = item.visualPrompt;
+                    if (!prompt || prompt.length < 5) {
+                        prompt = item.visualGuidance || `High quality product image for Amazon A+ content, ${item.moduleType}, ${input.usps}`;
+                    }
+                    aspectRatio = '16:9';
+                }
+
+                // Pass resolution
+                const url = await generateVisual(prompt, visualConfig || null, config, aspectRatio as any, imageResolution);
+
+                if (type === 'secondary') {
+                    updated.secondaryImages[idx].generatedImageUrl = url;
+                } else {
+                    updated.aPlusContent[idx].generatedImageUrl = url;
+                }
+
+            } catch (error: any) {
+                console.error(`❌ Batch error at #${idx}:`, error);
+                const errMsg = `ERROR:${error.message}`;
+                if (type === 'secondary') {
+                    updated.secondaryImages[idx].generatedImageUrl = errMsg;
+                } else {
+                    updated.aPlusContent[idx].generatedImageUrl = errMsg;
+                }
+            }
+
+            setStrategy({ ...updated });
+        });
+
+        await Promise.allSettled(promises);
+        showToast("✨ 批量生成任务结束！");
     };
 
     const handleSave = () => {
@@ -426,7 +518,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                             <span className="text-2xl mr-3">🧠</span> 市场洞察与视觉策略
                                         </h3>
                                         <div className="prose prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap mono bg-[#131314] p-8 rounded-2xl border border-[#3c4043] text-gray-300">
-                                            {strategy.analysis}
+                                            {typeof strategy.analysis === 'string' ? strategy.analysis : JSON.stringify(strategy.analysis)}
                                         </div>
                                     </div>
 
@@ -442,15 +534,22 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                 </button>
                                             </div>
                                             <div className="grid grid-cols-5 gap-4 opacity-70 hover:opacity-100 transition-opacity">
-                                                {strategy.secondaryImages.map((img, i) => (
-                                                    <div key={i} className="aspect-square bg-black rounded-lg border border-[#3c4043] flex items-center justify-center relative group" title={img.type}>
+                                                {strategy.secondaryImages.map((img, i) => {
+                                                    if (!img) return null;
+                                                    <div key={i} className="aspect-square bg-black rounded-lg border border-[#3c4043] flex items-center justify-center relative group" title={String(img.type || '')}>
                                                         {img.generatedImageUrl ? (
-                                                            <img src={img.generatedImageUrl} className="w-full h-full object-cover rounded-lg" />
+                                                            img.generatedImageUrl.startsWith('ERROR:') ? (
+                                                                <div className="w-full h-full flex items-center justify-center bg-red-900/20 text-[10px] text-red-400 p-1 text-center leading-tight overflow-hidden" title={img.generatedImageUrl}>
+                                                                    ⚠️ 生成失败
+                                                                </div>
+                                                            ) : (
+                                                                <img src={img.generatedImageUrl} className="w-full h-full object-cover rounded-lg" />
+                                                            )
                                                         ) : (
-                                                            <span className="text-[10px] text-gray-600 text-center px-1">{img.type}</span>
+                                                            <span className="text-[10px] text-gray-600 text-center px-1">{String(img.type || 'Image')}</span>
                                                         )}
                                                     </div>
-                                                ))}
+                                                })}
                                             </div>
                                         </div>
                                     )}
@@ -460,49 +559,107 @@ const Workspace: React.FC<WorkspaceProps> = ({
                             {activeTab === 'secondary' && (
                                 <div className="space-y-6">
                                     <div className="flex items-center justify-between">
-                                        <h3 className="text-xl font-bold text-white">亚马逊副图视觉方案</h3>
-                                        <p className="text-xs text-gray-500">基于 A9 算法生成的转化率优化图组</p>
+                                        <div>
+                                            <h3 className="text-xl font-bold text-white">亚马逊副图视觉方案</h3>
+                                            <p className="text-xs text-gray-500">基于 A9 算法生成的转化率优化图组</p>
+                                        </div>
+                                        <div className="flex items-center space-x-4">
+                                            {/* Resolution Selector */}
+                                            <div className="flex items-center bg-[#1e1f20] rounded-lg border border-[#3c4043] p-1">
+                                                {(['1K', '2K', '4K'] as const).map((conf) => (
+                                                    <button
+                                                        key={conf}
+                                                        onClick={() => setImageResolution(conf)}
+                                                        className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${imageResolution === conf
+                                                            ? 'bg-[#A8C7FA] text-black shadow-sm'
+                                                            : 'text-gray-400 hover:text-white hover:bg-[#3c3c3e]'
+                                                            }`}
+                                                    >
+                                                        {conf}
+                                                    </button>
+                                                ))}
+                                            </div>
+
+                                            <button
+                                                onClick={() => handleGenerateBatch('secondary')}
+                                                className="flex items-center space-x-2 px-4 py-2 bg-[#2a2a2c] hover:bg-[#3c3c3e] border border-[#3c4043] rounded-xl text-xs font-bold transition-all text-[#A8C7FA] hover:text-white hover:border-[#A8C7FA]"
+                                            >
+                                                <span>⚡</span>
+                                                <span>一键生成所有</span>
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        {strategy.secondaryImages && strategy.secondaryImages.length > 0 ? strategy.secondaryImages.map((img, i) => (
-                                            <div key={i} className="bg-[#1e1f20] rounded-3xl border border-[#3c4043] overflow-hidden shadow-2xl flex flex-col">
-                                                {/* Header */}
-                                                <div className="p-4 border-b border-[#3c4043] bg-[#252a31] flex justify-between items-center">
-                                                    <span className="text-[#A8C7FA] font-bold text-sm">#{i + 1} {img.type}</span>
-                                                    <span className="text-[10px] text-gray-400 bg-black/30 px-2 py-1 rounded">Vision {img.id}</span>
-                                                </div>
-                                                {/* Image Area */}
-                                                <div className="aspect-square bg-black relative flex items-center justify-center overflow-hidden group border-b border-[#3c4043]">
-                                                    {img.generatedImageUrl ? (
-                                                        <img src={img.generatedImageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                                                    ) : (
-                                                        <div className="text-center p-6">
-                                                            <div className="text-4xl mb-2 opacity-20">🖼️</div>
-                                                            <p className="text-xs text-gray-500">等待生成...</p>
+                                        {strategy.secondaryImages && strategy.secondaryImages.length > 0 ? strategy.secondaryImages.map((img, i) => {
+                                            if (!img) return null; // Safety check
+                                            const isPending = img.generatedImageUrl?.startsWith('PENDING:');
+                                            const isError = img.generatedImageUrl?.startsWith('ERROR:');
+                                            const hasImage = img.generatedImageUrl && !isPending && !isError;
+
+                                            return (
+                                                <div key={i} className="bg-[#1e1f20] rounded-3xl border border-[#3c4043] overflow-hidden shadow-2xl flex flex-col">
+                                                    {/* Header */}
+                                                    <div className="p-4 border-b border-[#3c4043] bg-[#252a31] flex justify-between items-center">
+                                                        <span className="text-[#A8C7FA] font-bold text-sm">#{i + 1} {String(img.type || '未命名')}</span>
+                                                        <span className="text-[10px] text-gray-400 bg-black/30 px-2 py-1 rounded">Vision {String(img.id || i)}</span>
+                                                    </div>
+                                                    {/* Image Area */}
+                                                    <div className="aspect-square bg-black relative flex items-center justify-center overflow-hidden group border-b border-[#3c4043]">
+                                                        {hasImage ? (
+                                                            <div className="relative w-full h-full group">
+                                                                <img src={img.generatedImageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                                                                <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                    {imageResolution}
+                                                                </div>
+                                                            </div>
+                                                        ) : isPending ? (
+                                                            <div className="flex flex-col items-center justify-center space-y-3">
+                                                                <div className="w-8 h-8 border-2 border-[#A8C7FA] border-t-transparent rounded-full animate-spin"></div>
+                                                                <p className="text-xs text-[#A8C7FA] animate-pulse">{img.generatedImageUrl?.replace('PENDING:', '')}</p>
+                                                            </div>
+                                                        ) : isError ? (
+                                                            <div className="flex flex-col items-center justify-center h-full bg-red-900/10 p-4 w-full cursor-pointer hover:bg-red-900/20 transition-colors"
+                                                                onClick={() => handleGenerateSingleImage('secondary', i)}
+                                                                title="点击重试">
+                                                                <span className="text-3xl mb-2">❌</span>
+                                                                <span className="text-xs text-red-400 text-center break-words max-w-[80%]">{img.generatedImageUrl?.replace('ERROR:', '')}</span>
+                                                                <span className="text-[10px] text-gray-500 mt-2 border border-gray-600 px-2 py-1 rounded">点击重试</span>
+                                                            </div>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleGenerateSingleImage('secondary', i)}
+                                                                className="flex flex-col items-center justify-center w-full h-full group/btn hover:bg-[#252a31] transition-colors cursor-pointer"
+                                                            >
+                                                                <div className="w-12 h-12 rounded-full bg-[#1e1f20] border border-[#3c4043] flex items-center justify-center mb-3 group-hover/btn:scale-110 group-hover/btn:border-[#A8C7FA] transition-all shadow-lg">
+                                                                    <span className="text-xl">🎨</span>
+                                                                </div>
+                                                                <p className="text-xs text-gray-400 group-hover/btn:text-[#A8C7FA] font-bold">点击生成视觉</p>
+                                                                <p className="text-[10px] text-gray-600 mt-1">1:1 Square • {imageResolution}</p>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    {/* Meta Info */}
+                                                    <div className="p-6 flex-1 flex flex-col space-y-4">
+                                                        <div>
+                                                            <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">画面描述</span>
+                                                            <p className="text-xs text-gray-300 leading-relaxed">{String(img.description || '无描述')}</p>
                                                         </div>
-                                                    )}
-                                                </div>
-                                                {/* Meta Info */}
-                                                <div className="p-6 flex-1 flex flex-col space-y-4">
-                                                    <div>
-                                                        <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">画面描述</span>
-                                                        <p className="text-xs text-gray-300 leading-relaxed">{img.description}</p>
-                                                    </div>
-                                                    <div>
-                                                        <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">营销文案 (Copy)</span>
-                                                        <p className="text-xs text-white bg-[#131314] p-3 rounded-lg border border-[#3c4043] font-serif italic">"{img.copywriting}"</p>
-                                                    </div>
-                                                    <div className="mt-auto pt-4 border-t border-[#3c4043]">
-                                                        <details className="group">
-                                                            <summary className="text-[10px] text-gray-500 cursor-pointer list-none flex items-center gap-2 hover:text-gray-300">
-                                                                <span className="group-open:rotate-90 transition-transform">▶</span> Show MJ Prompt
-                                                            </summary>
-                                                            <p className="mt-2 text-[10px] font-mono text-gray-500 bg-black p-2 rounded selectable">{img.visualPrompt}</p>
-                                                        </details>
+                                                        <div>
+                                                            <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">营销文案 (Copy)</span>
+                                                            <p className="text-xs text-white bg-[#131314] p-3 rounded-lg border border-[#3c4043] font-serif italic">"{String(img.copywriting || '...')}"</p>
+                                                        </div>
+                                                        <div className="mt-auto pt-4 border-t border-[#3c4043]">
+                                                            <details className="group">
+                                                                <summary className="text-[10px] text-gray-500 cursor-pointer list-none flex items-center gap-2 hover:text-gray-300">
+                                                                    <span className="group-open:rotate-90 transition-transform">▶</span> Show MJ Prompt
+                                                                </summary>
+                                                                <p className="mt-2 text-[10px] font-mono text-gray-500 bg-black p-2 rounded selectable">{String(img.visualPrompt || 'No Prompt')}</p>
+                                                            </details>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        )) : (
+                                            )
+                                        }) : (
                                             <div className="col-span-2 bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6 text-center">
                                                 <p className="text-yellow-300">⚠️ 暂无副图数据</p>
                                                 <button onClick={() => setActiveTab('analysis')} className="text-xs text-yellow-500 underline mt-2">返回分析页检查错误</button>
@@ -515,49 +672,106 @@ const Workspace: React.FC<WorkspaceProps> = ({
                             {activeTab === 'aplus' && (
                                 <div className="space-y-6">
                                     <div className="flex items-center justify-between">
-                                        <h3 className="text-xl font-bold text-white">A+ 详情页布局方案</h3>
-                                        <p className="text-xs text-gray-500">高转化 A+ Content 视觉模块</p>
+                                        <div>
+                                            <h3 className="text-xl font-bold text-white">A+ 详情页布局方案</h3>
+                                            <p className="text-xs text-gray-500">高转化 A+ Content 视觉模块</p>
+                                        </div>
+                                        <div className="flex items-center space-x-4">
+                                            {/* Resolution Selector */}
+                                            <div className="flex items-center bg-[#1e1f20] rounded-lg border border-[#3c4043] p-1">
+                                                {(['1K', '2K', '4K'] as const).map((conf) => (
+                                                    <button
+                                                        key={conf}
+                                                        onClick={() => setImageResolution(conf)}
+                                                        className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${imageResolution === conf
+                                                            ? 'bg-[#A8C7FA] text-black shadow-sm'
+                                                            : 'text-gray-400 hover:text-white hover:bg-[#3c3c3e]'
+                                                            }`}
+                                                    >
+                                                        {conf}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <button
+                                                onClick={() => handleGenerateBatch('aplus')}
+                                                className="flex items-center space-x-2 px-4 py-2 bg-[#2a2a2c] hover:bg-[#3c3c3e] border border-[#3c4043] rounded-xl text-xs font-bold transition-all text-[#A8C7FA] hover:text-white hover:border-[#A8C7FA]"
+                                            >
+                                                <span>⚡</span>
+                                                <span>一键生成所有</span>
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="grid grid-cols-1 gap-8">
-                                        {strategy.aPlusContent && strategy.aPlusContent.length > 0 ? strategy.aPlusContent.map((m, i) => (
-                                            <div key={i} className="bg-[#1e1f20] rounded-3xl border border-[#3c4043] overflow-hidden shadow-2xl flex flex-col">
-                                                {/* Header */}
-                                                <div className="p-4 border-b border-[#3c4043] bg-[#252a31] flex justify-between items-center">
-                                                    <span className="text-[#A8C7FA] font-bold text-sm">#{i + 1} {m.moduleType}</span>
-                                                    <span className="text-[10px] text-gray-400 bg-black/30 px-2 py-1 rounded">Module {m.id}</span>
-                                                </div>
-                                                {/* Image Area - 16:9 横图 */}
-                                                <div className="aspect-video bg-black relative flex items-center justify-center overflow-hidden group border-b border-[#3c4043]">
-                                                    {m.generatedImageUrl ? (
-                                                        <img src={m.generatedImageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                                                    ) : (
-                                                        <div className="text-center p-6">
-                                                            <div className="text-4xl mb-2 opacity-20">📑</div>
-                                                            <p className="text-xs text-gray-500">等待生成 16:9 横图...</p>
+                                        {strategy.aPlusContent && strategy.aPlusContent.length > 0 ? strategy.aPlusContent.map((m, i) => {
+                                            if (!m) return null; // Safety check
+                                            const isPending = m.generatedImageUrl?.startsWith('PENDING:');
+                                            const isError = m.generatedImageUrl?.startsWith('ERROR:');
+                                            const hasImage = m.generatedImageUrl && !isPending && !isError;
+
+                                            return (
+                                                <div key={i} className="bg-[#1e1f20] rounded-3xl border border-[#3c4043] overflow-hidden shadow-2xl flex flex-col">
+                                                    {/* Header */}
+                                                    <div className="p-4 border-b border-[#3c4043] bg-[#252a31] flex justify-between items-center">
+                                                        <span className="text-[#A8C7FA] font-bold text-sm">#{i + 1} {String(m.moduleType || 'Modules')}</span>
+                                                        <span className="text-[10px] text-gray-400 bg-black/30 px-2 py-1 rounded">Module {String(m.id || i)}</span>
+                                                    </div>
+                                                    {/* Image Area - 16:9 横图 */}
+                                                    <div className="aspect-video bg-black relative flex items-center justify-center overflow-hidden group border-b border-[#3c4043]">
+                                                        {hasImage ? (
+                                                            <div className="relative w-full h-full group">
+                                                                <img src={m.generatedImageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                                                                <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                    {imageResolution}
+                                                                </div>
+                                                            </div>
+                                                        ) : isPending ? (
+                                                            <div className="flex flex-col items-center justify-center space-y-3">
+                                                                <div className="w-8 h-8 border-2 border-[#A8C7FA] border-t-transparent rounded-full animate-spin"></div>
+                                                                <p className="text-xs text-[#A8C7FA] animate-pulse">{m.generatedImageUrl?.replace('PENDING:', '')}</p>
+                                                            </div>
+                                                        ) : isError ? (
+                                                            <div className="flex flex-col items-center justify-center h-full bg-red-900/10 p-4 w-full cursor-pointer hover:bg-red-900/20 transition-colors"
+                                                                onClick={() => handleGenerateSingleImage('aplus', i)}
+                                                                title="点击重试">
+                                                                <span className="text-3xl mb-2">❌</span>
+                                                                <span className="text-xs text-red-400 text-center break-words max-w-[80%]">{m.generatedImageUrl?.replace('ERROR:', '')}</span>
+                                                                <span className="text-[10px] text-gray-500 mt-2 border border-gray-600 px-2 py-1 rounded">点击重试</span>
+                                                            </div>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleGenerateSingleImage('aplus', i)}
+                                                                className="flex flex-col items-center justify-center w-full h-full group/btn hover:bg-[#252a31] transition-colors cursor-pointer"
+                                                            >
+                                                                <div className="w-12 h-12 rounded-full bg-[#1e1f20] border border-[#3c4043] flex items-center justify-center mb-3 group-hover/btn:scale-110 group-hover/btn:border-[#A8C7FA] transition-all shadow-lg">
+                                                                    <span className="text-xl">🎨</span>
+                                                                </div>
+                                                                <p className="text-xs text-gray-400 group-hover/btn:text-[#A8C7FA] font-bold">点击生成 A+ 配图</p>
+                                                                <p className="text-[10px] text-gray-600 mt-1">16:9 Wide • {imageResolution}</p>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    {/* Meta Info */}
+                                                    <div className="p-6 flex-1 flex flex-col space-y-4">
+                                                        <div>
+                                                            <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">模块内容</span>
+                                                            <p className="text-sm text-gray-300 leading-relaxed">{String(m.content || '无内容')}</p>
                                                         </div>
-                                                    )}
-                                                </div>
-                                                {/* Meta Info */}
-                                                <div className="p-6 flex-1 flex flex-col space-y-4">
-                                                    <div>
-                                                        <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">模块内容</span>
-                                                        <p className="text-sm text-gray-300 leading-relaxed">{m.content}</p>
-                                                    </div>
-                                                    <div>
-                                                        <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">视觉指导 (Visual Guidance)</span>
-                                                        <p className="text-xs text-white bg-[#131314] p-3 rounded-lg border border-[#3c4043]">{m.visualGuidance}</p>
-                                                    </div>
-                                                    <div className="mt-auto pt-4 border-t border-[#3c4043]">
-                                                        <details className="group">
-                                                            <summary className="text-[10px] text-gray-500 cursor-pointer list-none flex items-center gap-2 hover:text-gray-300">
-                                                                <span className="group-open:rotate-90 transition-transform">▶</span> Show Image Prompt
-                                                            </summary>
-                                                            <p className="mt-2 text-[10px] font-mono text-gray-500 bg-black p-2 rounded selectable">{m.visualPrompt || m.visualGuidance || '无生图提示词'}</p>
-                                                        </details>
+                                                        <div>
+                                                            <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">视觉指导 (Visual Guidance)</span>
+                                                            <p className="text-xs text-white bg-[#131314] p-3 rounded-lg border border-[#3c4043]">{String(m.visualGuidance || '...')}</p>
+                                                        </div>
+                                                        <div className="mt-auto pt-4 border-t border-[#3c4043]">
+                                                            <details className="group">
+                                                                <summary className="text-[10px] text-gray-500 cursor-pointer list-none flex items-center gap-2 hover:text-gray-300">
+                                                                    <span className="group-open:rotate-90 transition-transform">▶</span> Show Image Prompt
+                                                                </summary>
+                                                                <p className="mt-2 text-[10px] font-mono text-gray-500 bg-black p-2 rounded selectable">{String(m.visualPrompt || m.visualGuidance || '无生图提示词')}</p>
+                                                            </details>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        )) : (
+                                            )
+                                        }) : (
                                             <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6 text-center">
                                                 <p className="text-yellow-300">⚠️ 暂无 A+ 内容数据</p>
                                                 <button onClick={() => setActiveTab('analysis')} className="text-xs text-yellow-500 underline mt-2">返回分析页检查错误</button>

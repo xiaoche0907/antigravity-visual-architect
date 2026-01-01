@@ -5,10 +5,11 @@
 
 // 模型分类：严格区分文本和图像
 // 模型分类：严格区分文本、图像和多模态
+// 模型分类：严格区分文本、图像和多模态
 export type ModelCategory = 'text' | 'image' | 'multimodal';
 
 // 提供商类型
-export type ProviderType = 'google' | 'aliyun' | 'openai' | 'volcengine' | 'modelscope' | 'openai-compatible' | 'custom';
+export type ProviderType = 'google' | 'aliyun' | 'openai' | 'volcengine' | 'modelscope' | 'openai-compatible' | 'custom' | 'jiekou';
 
 /**
  * 模型配置接口 - 每个配置都是一个独立的资产
@@ -55,6 +56,10 @@ export const PROVIDER_DEFAULTS: Record<ProviderType, { baseUrl: string; name: st
         name: 'OpenAI 兼容协议 (通用)',
         baseUrl: ''
     },
+    jiekou: {
+        name: '接口AI (Jiekou)',
+        baseUrl: 'https://api.jiekou.ai/v3'
+    },
     custom: {
         name: '自定义',
         baseUrl: ''
@@ -73,6 +78,7 @@ export const RECOMMENDED_MULTIMODAL_MODELS: Record<ProviderType, string[]> = {
         'Qwen/Qwen2-VL-7B-Instruct'
     ],
     'openai-compatible': [],
+    jiekou: [],
     custom: []
 };
 
@@ -86,6 +92,7 @@ export const RECOMMENDED_TEXT_MODELS: Record<ProviderType, string[]> = {
     volcengine: ['doubao-pro-32k', 'doubao-lite-4k', 'ep-20241228-xxxxx'],
     modelscope: ['ZhipuAI/GLM-4.7', 'Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-Coder-32B-Instruct'],
     'openai-compatible': ['deepseek-chat', 'moonshot-v1-8k', 'yi-large', 'llama2'],
+    jiekou: [],
     custom: []
 };
 
@@ -99,6 +106,7 @@ export const RECOMMENDED_IMAGE_MODELS: Record<ProviderType, string[]> = {
     volcengine: [],
     modelscope: ['Tongyi-MAI/Z-Image-Turbo', 'Tongyi-MAI/Z-Image', 'stabilityai/stable-diffusion-xl', 'stabilityai/stable-diffusion-3-medium'],
     'openai-compatible': [],
+    jiekou: ['gemini-3-pro-image-text-to-image'],
     custom: []
 };
 
