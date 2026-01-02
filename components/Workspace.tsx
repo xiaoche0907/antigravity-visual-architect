@@ -48,15 +48,29 @@ const Workspace: React.FC<WorkspaceProps> = ({
     history, onSaveToHistory, onRestoreSession, onDeleteSession
 }) => {
 
+
     // Local UI State
     const [showHistory, setShowHistory] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [imageResolution, setImageResolution] = useState<'1K' | '2K' | '4K'>('1K');
+    const [zoomedImage, setZoomedImage] = useState<string | null>(null); // Lightbox State
 
     const showToast = (msg: string) => {
         setToastMessage(msg);
         setTimeout(() => setToastMessage(null), 3000);
     };
+
+    const handleDownload = (url: string, prefix: string) => {
+        if (!url || url.startsWith('http') === false) return;
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `A9_Architect_${prefix}_${Date.now()}.png`;
+        link.target = '_blank'; // For some browsers to force download or open new tab
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: 'productImages' | 'styleReferences') => {
         const files = Array.from(e.target.files || []) as File[];
@@ -154,6 +168,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
 
         // 验证图像模型配置
         const visualConfig = modelConfigs.find(m => m.id === selectedVisualModelId);
+        const textConfig = modelConfigs.find(m => m.id === selectedBrainModelId); // For prompt summarization
         if (!config.mockMode && (!visualConfig || !visualConfig.isEnabled)) {
             alert("⚠️ 图像模型未配置或已禁用，请检查设置。");
             return;
@@ -196,8 +211,8 @@ const Workspace: React.FC<WorkspaceProps> = ({
                 aspectRatio = '16:9';
             }
 
-            // 调用 API
-            const url = await generateVisual(prompt, visualConfig || null, config, aspectRatio as any, imageResolution);
+            // 调用 API - 传入产品图作为参考图 (for image editing models)
+            const url = await generateVisual(prompt, visualConfig || null, config, aspectRatio as any, imageResolution, input.productImages, textConfig);
 
             // 更新结果
             if (type === 'secondary') {
@@ -227,6 +242,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
 
         // 验证图像模型配置
         const visualConfig = modelConfigs.find(m => m.id === selectedVisualModelId);
+        const textConfig = modelConfigs.find(m => m.id === selectedBrainModelId); // For prompt summarization
         if (!config.mockMode && (!visualConfig || !visualConfig.isEnabled)) {
             alert("⚠️ 图像模型未配置或已禁用，请检查设置。");
             return;
@@ -252,38 +268,39 @@ const Workspace: React.FC<WorkspaceProps> = ({
 
         showToast(`🚀 开始批量生成 ${indicesToGenerate.length} 张图片 (${imageResolution})...`);
 
-        // 设置 Loading
-        indicesToGenerate.forEach(idx => {
-            if (type === 'secondary') {
-                updated.secondaryImages[idx].generatedImageUrl = "PENDING:队列中...";
-            } else {
-                updated.aPlusContent[idx].generatedImageUrl = "PENDING:队列中...";
-            }
-        });
-        setStrategy({ ...updated });
+        // 🚀 Concurrency Control Queue
+        const CONCURRENCY_LIMIT = 2; // Max 2 parallel requests to prevent browser stall
+        let activeWorkers = 0;
+        let queueIndex = 0;
 
-        const promises = indicesToGenerate.map(async (idx) => {
-            // Set running state individually
+        const processQueue = async () => {
+            // If queue finished
+            if (queueIndex >= indicesToGenerate.length) return;
+
+            // Get next task index
+            const currentIndex = indicesToGenerate[queueIndex++];
+
+            // Update UI to 'Generating...'
             if (type === 'secondary') {
-                updated.secondaryImages[idx].generatedImageUrl = "PENDING:正在绘制...";
+                updated.secondaryImages[currentIndex].generatedImageUrl = "PENDING:正在绘制... (勿刷新)";
             } else {
-                updated.aPlusContent[idx].generatedImageUrl = "PENDING:正在绘制...";
+                updated.aPlusContent[currentIndex].generatedImageUrl = "PENDING:正在绘制... (勿刷新)";
             }
-            setStrategy({ ...updated });
+            setStrategy({ ...updated }); // Force update UI
 
             try {
                 let prompt = '';
                 let aspectRatio = '';
 
                 if (type === 'secondary') {
-                    const item = updated.secondaryImages[idx];
+                    const item = updated.secondaryImages[currentIndex];
                     prompt = item.visualPrompt;
                     if (!prompt || prompt.length < 5) {
                         prompt = `Professional commercial photography of ${input.usps}, ${item.description}, 8k resolution`;
                     }
                     aspectRatio = '1:1';
                 } else {
-                    const item = updated.aPlusContent[idx];
+                    const item = updated.aPlusContent[currentIndex];
                     prompt = item.visualPrompt;
                     if (!prompt || prompt.length < 5) {
                         prompt = item.visualGuidance || `High quality product image for Amazon A+ content, ${item.moduleType}, ${input.usps}`;
@@ -291,29 +308,39 @@ const Workspace: React.FC<WorkspaceProps> = ({
                     aspectRatio = '16:9';
                 }
 
-                // Pass resolution
-                const url = await generateVisual(prompt, visualConfig || null, config, aspectRatio as any, imageResolution);
+                // Call API
+                const url = await generateVisual(prompt, visualConfig || null, config, aspectRatio as any, imageResolution, input.productImages, textConfig);
 
+                // Update Success
                 if (type === 'secondary') {
-                    updated.secondaryImages[idx].generatedImageUrl = url;
+                    updated.secondaryImages[currentIndex].generatedImageUrl = url;
                 } else {
-                    updated.aPlusContent[idx].generatedImageUrl = url;
+                    updated.aPlusContent[currentIndex].generatedImageUrl = url;
                 }
 
             } catch (error: any) {
-                console.error(`❌ Batch error at #${idx}:`, error);
+                console.error(`❌ Batch error at #${currentIndex}:`, error);
                 const errMsg = `ERROR:${error.message}`;
+                // Update Error
                 if (type === 'secondary') {
-                    updated.secondaryImages[idx].generatedImageUrl = errMsg;
+                    updated.secondaryImages[currentIndex].generatedImageUrl = errMsg;
                 } else {
-                    updated.aPlusContent[idx].generatedImageUrl = errMsg;
+                    updated.aPlusContent[currentIndex].generatedImageUrl = errMsg;
                 }
+            } finally {
+                // Update State and Trigger Next
+                setStrategy({ ...updated });
+                await processQueue();
             }
+        };
 
-            setStrategy({ ...updated });
-        });
+        // Start initial workers
+        const workers: Promise<void>[] = [];
+        for (let i = 0; i < Math.min(CONCURRENCY_LIMIT, indicesToGenerate.length); i++) {
+            workers.push(processQueue());
+        }
 
-        await Promise.allSettled(promises);
+        await Promise.allSettled(workers);
         showToast("✨ 批量生成任务结束！");
     };
 
@@ -607,9 +634,29 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                     <div className="aspect-square bg-black relative flex items-center justify-center overflow-hidden group border-b border-[#3c4043]">
                                                         {hasImage ? (
                                                             <div className="relative w-full h-full group">
-                                                                <img src={img.generatedImageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                                                                <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <img src={img.generatedImageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-105" onClick={() => setZoomedImage(img.generatedImageUrl)} />
+                                                                <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity z-10">
                                                                     {imageResolution}
+                                                                </div>
+                                                                {/* Controls Info */}
+                                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                                                                    <button
+                                                                        onClick={() => setZoomedImage(img.generatedImageUrl)}
+                                                                        className="p-2 bg-white/10 hover:bg-white/30 backdrop-blur rounded-full text-white transition-all transform hover:scale-110"
+                                                                        title="放大预览 (Zoom)"
+                                                                    >
+                                                                        <span className="text-xl">🔍</span>
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleDownload(img.generatedImageUrl as string, `Secondary_${i + 1}`);
+                                                                        }}
+                                                                        className="p-2 bg-white/10 hover:bg-white/30 backdrop-blur rounded-full text-white transition-all transform hover:scale-110"
+                                                                        title="下载原图 (Download)"
+                                                                    >
+                                                                        <span className="text-xl">⬇️</span>
+                                                                    </button>
                                                                 </div>
                                                             </div>
                                                         ) : isPending ? (
@@ -719,9 +766,29 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                     <div className="aspect-video bg-black relative flex items-center justify-center overflow-hidden group border-b border-[#3c4043]">
                                                         {hasImage ? (
                                                             <div className="relative w-full h-full group">
-                                                                <img src={m.generatedImageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                                                                <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <img src={m.generatedImageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-105" onClick={() => setZoomedImage(m.generatedImageUrl)} />
+                                                                <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity z-10">
                                                                     {imageResolution}
+                                                                </div>
+                                                                {/* Controls Info */}
+                                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                                                                    <button
+                                                                        onClick={() => setZoomedImage(m.generatedImageUrl)}
+                                                                        className="p-2 bg-white/10 hover:bg-white/30 backdrop-blur rounded-full text-white transition-all transform hover:scale-110"
+                                                                        title="放大预览 (Zoom)"
+                                                                    >
+                                                                        <span className="text-xl">🔍</span>
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleDownload(m.generatedImageUrl as string, `APlus_${i + 1}`);
+                                                                        }}
+                                                                        className="p-2 bg-white/10 hover:bg-white/30 backdrop-blur rounded-full text-white transition-all transform hover:scale-110"
+                                                                        title="下载原图 (Download)"
+                                                                    >
+                                                                        <span className="text-xl">⬇️</span>
+                                                                    </button>
                                                                 </div>
                                                             </div>
                                                         ) : isPending ? (
@@ -830,6 +897,38 @@ const Workspace: React.FC<WorkspaceProps> = ({
                     </div>
                 </div>
             </main>
+            {/* 👓 Lightbox Viewer */}
+            {zoomedImage && (
+                <div
+                    className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8 animate-in fade-in duration-200"
+                    onClick={() => setZoomedImage(null)}
+                >
+                    <button
+                        className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors p-2"
+                        onClick={() => setZoomedImage(null)}
+                    >
+                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+
+                    <img
+                        src={zoomedImage}
+                        className="max-w-full max-h-full object-contain rounded-lg shadow-2xl border border-white/10"
+                        onClick={(e) => e.stopPropagation()}
+                    />
+
+                    <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex gap-4">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownload(zoomedImage, 'HighRes');
+                            }}
+                            className="bg-white text-black px-6 py-3 rounded-full font-bold hover:scale-105 transition-transform shadow-xl flex items-center gap-2"
+                        >
+                            <span>⬇️</span> 下载原图
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

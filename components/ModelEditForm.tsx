@@ -276,7 +276,6 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
                     // Fallback: 使用推荐列表
                     console.warn('火山引擎模型列表获取失败，使用推荐列表:', error);
                     models = formData.category === 'text'
-                    models = formData.category === 'text'
                         ? RECOMMENDED_TEXT_MODELS.volcengine
                         : formData.category === 'image'
                             ? RECOMMENDED_IMAGE_MODELS.volcengine
@@ -308,15 +307,30 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
                     const data = await response.json();
                     let fetchedModels = (data.data || data.models || []).map((m: any) => m.id || m.name);
 
-                    // 如果是多模态分类，过滤掉非视觉模型 (必须包含 vl, vision, 4v, 4o 等关键词)
+                    // 如果是多模态分类，过滤掉非视觉模型
                     if (formData.category === 'multimodal') {
                         fetchedModels = fetchedModels.filter((id: string) => {
                             const lower = id.toLowerCase();
                             return lower.includes('vl') || lower.includes('vision') || lower.includes('4v') || lower.includes('4o');
                         });
                     }
+                    // 如果是图像分类，过滤掉非生图模型 (简易过滤)
+                    else if (formData.category === 'image') {
+                        fetchedModels = fetchedModels.filter((id: string) => {
+                            const lower = id.toLowerCase();
+                            return lower.includes('image') || lower.includes('diffusion') || lower.includes('flux') || lower.includes('sdxl') || lower.includes('paint');
+                        });
+                    }
 
-                    models = fetchedModels;
+                    // 💡 关键修复：强制合并推荐模型列表，确保特定模型 (如 Tongyi-MAI/Z-Image-Turbo) 总是可见
+                    const recommended = formData.category === 'text'
+                        ? RECOMMENDED_TEXT_MODELS.modelscope
+                        : formData.category === 'image'
+                            ? RECOMMENDED_IMAGE_MODELS.modelscope
+                            : RECOMMENDED_MULTIMODAL_MODELS.modelscope;
+
+                    // 去重合并: 推荐模型在前，API获取的在后
+                    models = Array.from(new Set([...recommended, ...fetchedModels]));
 
                 } catch (error) {
                     console.warn('ModelScope 列表获取失败，回退到推荐列表', error);

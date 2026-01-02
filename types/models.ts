@@ -106,7 +106,7 @@ export const RECOMMENDED_IMAGE_MODELS: Record<ProviderType, string[]> = {
     volcengine: [],
     modelscope: ['Tongyi-MAI/Z-Image-Turbo', 'Tongyi-MAI/Z-Image', 'stabilityai/stable-diffusion-xl', 'stabilityai/stable-diffusion-3-medium'],
     'openai-compatible': [],
-    jiekou: ['gemini-3-pro-image-text-to-image'],
+    jiekou: ['gemini-3-pro-image-text-to-image', 'gemini-3-pro-image-edit'],
     custom: []
 };
 
