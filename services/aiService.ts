@@ -442,12 +442,107 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
         aspectRatio,
         resolution,
         targetSize: size,
-        promptLength: prompt.length
+        promptLength: prompt.length,
+        referenceImagesCount: referenceImages.length
     });
 
     try {
-        // === ✅ 新增：接口AI (Jiekou.ai) 专用通道 ===
-        if (imageModel.provider === 'jiekou' || imageModel.baseUrl?.includes('jiekou.ai')) {
+        // === 🆕 Jiekou/Gemini Image Models (Chat Completion API) ===
+        // Supports: gemini-3-pro-image-preview, gemini-2.5-flash-image, etc.
+        // These use /v1/chat/completions instead of /v1/images/generations
+        if (imageModel.modelId.includes('gemini') && imageModel.modelId.includes('image')) {
+            console.log('🔵 [generateVisual] Gemini Image Model Detected (Chat Mode)...');
+
+            let endpoint = imageModel.baseUrl;
+            if (!endpoint.endsWith('/chat/completions')) {
+                // Remove /images/generations if present and append chat/completions
+                endpoint = endpoint.replace(/\/images\/generations$/, '').replace(/\/$/, '') + '/chat/completions';
+            }
+
+            // Construct Content Array
+            const content: any[] = [
+                { type: "text", text: prompt }
+            ];
+
+            // Add Reference Image if available (Logic for Edit/Preview)
+            if (referenceImages && referenceImages.length > 0) {
+                // Only take the first image for now as most APIs expect single ref image for edit
+                const refImg = referenceImages[0];
+                content.push({
+                    type: "image_url",
+                    image_url: {
+                        url: refImg // Assumes base64 data URI or public URL
+                    }
+                });
+                console.log('🖼️ [generateVisual] Added reference image to payload');
+            }
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${imageModel.apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: imageModel.modelId,
+                    stream: false,
+                    messages: [
+                        {
+                            role: "user",
+                            content: content
+                        }
+                    ]
+                })
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`Gemini Image API Failed (${response.status}): ${errText}`);
+            }
+
+            const data = await response.json();
+            const contentText = data.choices?.[0]?.message?.content || "";
+
+            // Extract URL from Markdown ![image](url) OR Base64 data URI
+            // Regex supports:
+            // 1. https://...
+            // 2. data:image/...;base64,...
+            // 3. Markdown format ![...](...)
+
+            // Try matching Markdown first: ![image](LINK)
+            const markdownMatch = contentText.match(/!\[.*?\]\((.*?)\)/);
+            if (markdownMatch && markdownMatch[1]) {
+                const link = markdownMatch[1];
+                console.log('✅ [generateVisual] Found Markdown Image Link');
+                return link;
+            }
+
+            // Try matching raw https URL
+            const urlMatch = contentText.match(/(https?:\/\/[^\s)]+)/);
+            if (urlMatch) {
+                console.log('✅ [generateVisual] Found HTTPS URL');
+                return urlMatch[1];
+            }
+
+            // Try matching raw Base64 Data URI if it's not in markdown
+            if (contentText.startsWith('data:image')) {
+                console.log('✅ [generateVisual] Found Raw Base64 Data URI');
+                return contentText;
+            }
+
+            // If nothing matched, maybe the whole content IS the url (if model behaves oddly)
+            if (contentText.length > 50 && !contentText.includes(' ')) {
+                // Heuristic: long string, no spaces -> likely a URL or Base64
+                return contentText;
+            }
+
+            throw new Error(`Gemini API returned success but no image found. Content preview: ${contentText.substring(0, 100)}...`);
+        }
+
+        // === 🚀 阿里 Wanx / 这里的 Jiekou 可能是指老版接口 ? ===
+        // Note: The original Jiekou.ai logic was here. The user's instruction implies combining it with Aliyun.
+        // Assuming the user intended to keep the jiekou.ai base URL check.
+        if (imageModel.provider === 'aliyun' || imageModel.provider === 'jiekou' || imageModel.baseUrl?.includes('jiekou.ai')) {
             console.log('🔵 [generateVisual] Detected Jiekou.ai API...');
 
             let targetUrl = imageModel.baseUrl.replace(/\/$/, '');
