@@ -3,13 +3,13 @@
  * 支持文本/图像模型的分离管理
  */
 
-// 模型分类：严格区分文本和图像
 // 模型分类：严格区分文本、图像和多模态
 // 模型分类：严格区分文本、图像和多模态
 export type ModelCategory = 'text' | 'image' | 'multimodal';
 
 // 提供商类型
-export type ProviderType = 'google' | 'aliyun' | 'openai' | 'volcengine' | 'modelscope' | 'openai-compatible' | 'custom' | 'jiekou';
+// cspell:ignore aliyun volcengine modelscope jiekou grsai qwen wanx doubao deepseek imagen dall Tongyi stabilityai Zhipu
+export type ProviderType = 'google' | 'openai' | 'aliyun' | 'volcengine' | 'modelscope' | 'custom' | 'openai-compatible' | 'jiekou' | 'grsai';
 
 /**
  * 模型配置接口 - 每个配置都是一个独立的资产
@@ -63,6 +63,10 @@ export const PROVIDER_DEFAULTS: Record<ProviderType, { baseUrl: string; name: st
     custom: {
         name: '自定义',
         baseUrl: ''
+    },
+    grsai: {
+        name: 'Grsai',
+        baseUrl: 'https://grsaiapi.com'
     }
 };
 
@@ -79,6 +83,7 @@ export const RECOMMENDED_MULTIMODAL_MODELS: Record<ProviderType, string[]> = {
     ],
     'openai-compatible': [],
     jiekou: [],
+    grsai: [],
     custom: []
 };
 
@@ -93,6 +98,7 @@ export const RECOMMENDED_TEXT_MODELS: Record<ProviderType, string[]> = {
     modelscope: ['ZhipuAI/GLM-4.7', 'Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-Coder-32B-Instruct'],
     'openai-compatible': ['deepseek-chat', 'moonshot-v1-8k', 'yi-large', 'llama2'],
     jiekou: [],
+    grsai: ['gemini-3-pro', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
     custom: []
 };
 
@@ -107,6 +113,7 @@ export const RECOMMENDED_IMAGE_MODELS: Record<ProviderType, string[]> = {
     modelscope: ['Tongyi-MAI/Z-Image-Turbo', 'Tongyi-MAI/Z-Image', 'stabilityai/stable-diffusion-xl', 'stabilityai/stable-diffusion-3-medium'],
     'openai-compatible': ['gemini-3-pro-image-preview', 'gemini-2.5-flash-image', 'gemini-2.5-flash-image-preview'],
     jiekou: ['gemini-3-pro-image-text-to-image', 'gemini-3-pro-image-edit'],
+    grsai: ['nano-banana', 'nano-banana-pro', 'nano-banana-fast'],
     custom: []
 };
 

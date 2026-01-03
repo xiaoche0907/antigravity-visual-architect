@@ -1,16 +1,21 @@
-
 export enum WorkflowMode {
-  PROMPT_ONLY = 'PROMPT_ONLY',
-  DIRECT_GENERATION = 'DIRECT_GENERATION'
+  PROMPT_ONLY = "PROMPT_ONLY",
+  DIRECT_GENERATION = "DIRECT_GENERATION",
 }
 
 export enum RoleFocus {
-  TECHNICAL = 'TECHNICAL',
-  LIFESTYLE = 'LIFESTYLE',
-  BALANCED = 'BALANCED'
+  TECHNICAL = "TECHNICAL",
+  LIFESTYLE = "LIFESTYLE",
+  BALANCED = "BALANCED",
 }
 
-export type BrainProvider = 'modelscope' | 'google' | 'openai' | 'custom' | 'gemini';
+export type BrainProvider =
+  | "modelscope"
+  | "google"
+  | "openai"
+  | "custom"
+  | "gemini"
+  | "grsai";
 
 export interface AppConfig {
   mockMode: boolean;
@@ -22,7 +27,13 @@ export interface AppConfig {
     apiKey?: string;
   };
   visual: {
-    provider: 'modelscope' | 'google' | 'openai' | 'custom' | 'gemini';
+    provider:
+      | "modelscope"
+      | "google"
+      | "openai"
+      | "custom"
+      | "gemini"
+      | "grsai";
     model: string;
     baseUrl: string;
     useSameKeyAsBrain: boolean;
@@ -53,7 +64,7 @@ export interface APlusModulePlan {
   moduleType: string;
   content: string;
   visualGuidance: string; // 中文视觉指导 (用于人看)
-  visualPrompt: string;   // 英文生图提示词 (用于 AI 画)
+  visualPrompt: string; // 英文生图提示词 (用于 AI 画)
   generatedImageUrl?: string;
 }
 
@@ -93,7 +104,7 @@ export interface PersonalAgent {
 }
 
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'error' | 'system';
+  role: "user" | "assistant" | "error" | "system";
   content: string;
   attachments?: string[];
   timestamp: number;

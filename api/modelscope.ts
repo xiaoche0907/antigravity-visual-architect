@@ -1,3 +1,4 @@
+// cspell:ignore modelscope Tongyi
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 /**

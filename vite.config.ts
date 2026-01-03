@@ -88,9 +88,77 @@ function modelScopeProxyPlugin(): Plugin {
   };
 }
 
+// NEW: 通用代理插件 (解决 CORS 问题)
+function universalProxyPlugin(): Plugin {
+  return {
+    name: 'universal-proxy',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url?.startsWith('/api/proxy/universal')) {
+          return next();
+        }
+
+        const url = new URL(req.url, 'http://localhost');
+        const targetUrl = url.searchParams.get('url');
+
+        if (!targetUrl) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: 'Missing "url" query parameter' }));
+          return;
+        }
+
+        try {
+          const authHeader = req.headers.authorization;
+          const contentType = req.headers['content-type'];
+
+          // 构建请求
+          const fetchOptions: RequestInit = {
+            method: req.method,
+            headers: {},
+            // Only attach body for non-GET/HEAD methods
+            body: (req.method !== 'GET' && req.method !== 'HEAD') ? await readBody(req) : undefined,
+          };
+
+          // 转发 Headers
+          if (authHeader) fetchOptions.headers!['Authorization'] = authHeader;
+          if (contentType) fetchOptions.headers!['Content-Type'] = contentType;
+          // Add custom headers if needed
+          fetchOptions.headers!['X-Forwarded-For'] = '127.0.0.1';
+
+          console.log(`[Universal Proxy] Proxying ${req.method} to: ${targetUrl}`);
+
+          const response = await fetch(targetUrl, fetchOptions);
+          const data = await response.text();
+
+          // 设置响应头
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Content-Type', response.headers.get('content-type') || 'application/json');
+          res.statusCode = response.status;
+          res.end(data);
+
+        } catch (error: any) {
+          console.error('[Universal Proxy] Error:', error);
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: error.message }));
+        }
+      });
+    }
+  };
+}
+
+// Helper to read request body
+function readBody(req: any): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', (chunk: any) => body += chunk);
+    req.on('end', () => resolve(body));
+    req.on('error', reject);
+  });
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react(), modelScopeProxyPlugin()],
+  plugins: [react(), modelScopeProxyPlugin(), universalProxyPlugin()],
   server: {
     port: 3000,
     proxy: {

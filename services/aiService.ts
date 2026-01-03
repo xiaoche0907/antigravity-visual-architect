@@ -1,6 +1,6 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { AppConfig, BrainProvider, MarketingStrategy, RoleFocus, ProductInput, ChatMessage } from "../types";
+// cspell:ignore genai Nanobannan DALL Aliyun Volcengine volcengine modelscope dall wanx Wanx Jiekou Grsai grsai Imagen Zhipu Apisix grsaiapi
 import { ModelConfig } from "../types/models";
 import { ROLE_FOCUS_PROMPTS } from "../constants";
 
@@ -92,6 +92,15 @@ const safeJSONParse = (text: string): any => {
 };
 
 // --- Business Logic Services ---
+
+// Helper: Universal Proxy URL Generator
+const getProxiedUrl = (originalUrl: string): string => {
+    // 只在浏览器环境且 URL 开头为 http(s) 时使用代理
+    if (typeof window !== 'undefined' && originalUrl.startsWith('http')) {
+        return `/api/proxy/universal?url=${encodeURIComponent(originalUrl)}`;
+    }
+    return originalUrl;
+};
 
 export const generateMarketingStrategy = async (
     input: ProductInput,
@@ -201,16 +210,32 @@ export const generateMarketingStrategy = async (
             let endpoint: string;
 
             if (textModel.provider === 'openai-compatible' || textModel.provider === 'custom') {
-                // 通用兼容模式：完全信任用户输入
-                // 用户需要自己确保 URL 正确，系统只负责拼接 /chat/completions
-                endpoint = textModel.baseUrl.endsWith('/chat/completions')
-                    ? textModel.baseUrl
-                    : `${textModel.baseUrl.replace(/\/$/, '')}/chat/completions`;
+                let baseUrl = textModel.baseUrl;
+                
+                // 🚨 Global Grsai Auto-Fix (grsaiapi.com)
+                if (baseUrl.includes('grsai') && !baseUrl.includes('grsaiapi.com')) {
+                     baseUrl = 'https://grsaiapi.com';
+                }
+                // Ensure /v1 for grsaiapi
+                if (baseUrl.includes('grsaiapi.com') && !baseUrl.includes('/v1')) {
+                    baseUrl = 'https://grsaiapi.com/v1';
+                }
+
+                endpoint = baseUrl.endsWith('/chat/completions')
+                    ? baseUrl
+                    : `${baseUrl.replace(/\/$/, '')}/chat/completions`;
             } else {
-                // 已知提供商：使用现有逻辑
-                endpoint = textModel.baseUrl.endsWith('/chat/completions')
-                    ? textModel.baseUrl
-                    : `${textModel.baseUrl.replace(/\/$/, '')}/chat/completions`;
+                // 已知提供商
+                let baseUrl = textModel.baseUrl;
+
+                // 🚨 Global Grsai Auto-Fix
+                if ((textModel.provider === 'grsai' || baseUrl.includes('grsai')) && !baseUrl.includes('grsaiapi.com')) {
+                     baseUrl = 'https://grsaiapi.com/v1';
+                }
+
+                endpoint = baseUrl.endsWith('/chat/completions')
+                    ? baseUrl
+                    : `${baseUrl.replace(/\/$/, '')}/chat/completions`;
             }
 
             const messages: any[] = [
@@ -242,7 +267,7 @@ export const generateMarketingStrategy = async (
                 requestBody.response_format = { type: "json_object" };
             }
 
-            const res = await fetch(endpoint, {
+            const res = await fetch(getProxiedUrl(endpoint), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -360,7 +385,7 @@ const summarizePromptForModelScope = async (
             endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
         }
 
-        const res = await fetch(endpoint, {
+        const res = await fetch(getProxiedUrl(endpoint), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -453,10 +478,18 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
         if (imageModel.modelId.includes('gemini') && imageModel.modelId.includes('image')) {
             console.log('🔵 [generateVisual] Gemini Image Model Detected (Chat Mode)...');
 
-            let endpoint = imageModel.baseUrl;
-            if (!endpoint.endsWith('/chat/completions')) {
-                // Remove /images/generations if present and append chat/completions
-                endpoint = endpoint.replace(/\/images\/generations$/, '').replace(/\/$/, '') + '/chat/completions';
+            let endpoint = imageModel.baseUrl.trim();
+            
+            // 🚨 FORCE CORRECT ENDPOINT FOR GRSAI (New Domain: grsaiapi.com)
+            if (imageModel.provider === 'grsai' || endpoint.includes('grsai') || endpoint.includes('grsaiapi')) {
+                endpoint = 'https://grsaiapi.com/v1/chat/completions';
+                console.log('🔹 [Auto-Fix] Forced Grsai Endpoint:', endpoint);
+            } else {
+                // Generic Gemini Logic
+                if (!endpoint.endsWith('/chat/completions')) {
+                     // Remove /images/generations if present and append chat/completions
+                     endpoint = endpoint.replace(/\/images\/generations$/, '').replace(/\/$/, '') + '/chat/completions';
+                }
             }
 
             // Construct Content Array
@@ -477,7 +510,9 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
                 console.log('🖼️ [generateVisual] Added reference image to payload');
             }
 
-            const response = await fetch(endpoint, {
+            console.log(`📡 [generateVisual] Gemini Request to: ${endpoint}`);
+
+            const response = await fetch(getProxiedUrl(endpoint), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${imageModel.apiKey}`,
@@ -497,6 +532,10 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
 
             if (!response.ok) {
                 const errText = await response.text();
+                // 404 Specific Hint
+                if (response.status === 404) {
+                     throw new Error(`Gemini Image API Failed (404): Path not found. Requested: ${endpoint}`);
+                }
                 throw new Error(`Gemini Image API Failed (${response.status}): ${errText}`);
             }
 
@@ -530,13 +569,12 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
                 return contentText;
             }
 
-            // If nothing matched, maybe the whole content IS the url (if model behaves oddly)
-            if (contentText.length > 50 && !contentText.includes(' ')) {
-                // Heuristic: long string, no spaces -> likely a URL or Base64
-                return contentText;
-            }
-
-            throw new Error(`Gemini API returned success but no image found. Content preview: ${contentText.substring(0, 100)}...`);
+            // If we are here, we got success response but NO image
+            console.error("Gemini Response Content:", contentText);
+            
+            // 🔍 Debug: Dump the whole response to UI to see what's wrong
+            const debugInfo = JSON.stringify(data, null, 2);
+            throw new Error(`Gemini API returned success but no image found.\nFull Response: ${debugInfo.substring(0, 500)}...`);
         }
 
         // === 🚀 阿里 Wanx / 这里的 Jiekou 可能是指老版接口 ? ===
@@ -584,14 +622,14 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
                 if (urls.length > 0) payload.image_urls = urls;
             }
 
-            const res = await fetch(targetUrl, {
+            const res = await fetch(getProxiedUrl(targetUrl), {
                 method: 'POST',
                 headers: {
                     'Authorization': imageModel.apiKey.startsWith('Bearer') ? imageModel.apiKey : `Bearer ${imageModel.apiKey}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(payload),
-                mode: 'cors'
+                // mode: 'cors' // 代理模式下不需要 CORS mode
             });
 
             if (!res.ok) {
@@ -611,6 +649,120 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
             console.log('✅ [generateVisual] Jiekou 图像生成成功:', imageUrl.substring(0, 50) + '...');
             return imageUrl;
         }
+
+        // === 🍌 Grsai nano-banana (Async Draw API) ===
+        // Docs: https://grsai.com/zh/dashboard/documents/nano-banana
+        // Host(海外): https://grsaiapi.com
+        // Host(国内直连): https://grsai.dakka.com.cn
+        // 绘图接口: POST /v1/draw/{model}
+        // 结果接口: POST /v1/draw/result
+        if (imageModel.provider === 'grsai' || imageModel.baseUrl?.includes('grsai')) {
+             console.log('🍌 [generateVisual] Grsai nano-banana Detected (Async Draw API)...');
+             
+             // Determine host - use configured or default to overseas
+             let host = 'https://grsaiapi.com';
+             if (imageModel.baseUrl?.includes('dakka.com.cn')) {
+                 host = 'https://grsai.dakka.com.cn';
+             }
+             
+             const modelId = imageModel.modelId || 'nano-banana';
+             const drawEndpoint = `${host}/v1/draw/${modelId}`;
+             const resultEndpoint = `${host}/v1/draw/result`;
+
+             console.log(`📡 [generateVisual] Submitting to Grsai: ${drawEndpoint}`);
+
+             // 1. Submit Draw Task
+             const drawPayload: any = {
+                 prompt: prompt
+             };
+             
+             // Add reference image if provided
+             if (referenceImages && referenceImages.length > 0) {
+                 console.log(`🖼️ [generateVisual] Adding reference image to Grsai payload...`);
+                 // Based on API docs, likely uses image_url or image field
+                 drawPayload.image = referenceImages[0];
+             }
+
+             const submitRes = await fetch(getProxiedUrl(drawEndpoint), {
+                 method: 'POST',
+                 headers: {
+                     'Authorization': `Bearer ${imageModel.apiKey}`,
+                     'Content-Type': 'application/json'
+                 },
+                 body: JSON.stringify(drawPayload)
+             });
+
+             if (!submitRes.ok) {
+                 const errText = await submitRes.text();
+                 throw new Error(`Grsai 提交失败 (${submitRes.status}): ${errText}`);
+             }
+
+             const submitData = await submitRes.json();
+             
+             // Check for immediate error
+             if (submitData.code !== 0) {
+                 throw new Error(`Grsai 提交失败: ${submitData.msg || JSON.stringify(submitData)}`);
+             }
+             
+             const taskId = submitData.data?.id;
+             if (!taskId) {
+                 throw new Error(`Grsai 提交成功但未返回任务 ID: ${JSON.stringify(submitData)}`);
+             }
+             console.log(`⏳ [generateVisual] Grsai Task Submitted. Task ID: ${taskId}`);
+
+             // 2. Poll for Result
+             let attempts = 0;
+             const maxAttempts = 60; // 60 * 2s = 120s timeout
+
+             while (attempts < maxAttempts) {
+                 attempts++;
+                 await new Promise(r => setTimeout(r, 2000)); // Wait 2s
+
+                 const pollRes = await fetch(getProxiedUrl(resultEndpoint), {
+                     method: 'POST',
+                     headers: {
+                         'Authorization': `Bearer ${imageModel.apiKey}`,
+                         'Content-Type': 'application/json'
+                     },
+                     body: JSON.stringify({ id: taskId })
+                 });
+
+                 if (!pollRes.ok) {
+                     console.warn(`[Grsai] Polling error: ${pollRes.status}`);
+                     continue;
+                 }
+
+                 const pollData = await pollRes.json();
+                 
+                 if (pollData.code !== 0) {
+                     // code: -22 means task not found yet, keep polling
+                     if (pollData.code === -22) continue;
+                     throw new Error(`Grsai 轮询失败: ${pollData.msg || JSON.stringify(pollData)}`);
+                 }
+                 
+                 const status = pollData.data?.status;
+                 const progress = pollData.data?.progress || 0;
+                 
+                 console.log(`🔄 [Grsai] Polling... Status: ${status}, Progress: ${progress}%`);
+
+                 if (status === 'succeeded') {
+                     // Success! Extract image URL
+                     const imageUrl = pollData.data?.results?.[0]?.url;
+                     if (!imageUrl) {
+                         throw new Error(`Grsai 任务成功但未找到图片 URL: ${JSON.stringify(pollData.data)}`);
+                     }
+                     console.log('✅ [generateVisual] Grsai 图像生成成功:', imageUrl.substring(0, 80) + '...');
+                     return imageUrl;
+                 } else if (status === 'failed') {
+                     throw new Error(`Grsai 任务失败: ${pollData.data?.failure_reason || pollData.data?.error || 'Unknown error'}`);
+                 }
+                 // If pending or processing, continue loop
+             }
+
+             throw new Error(`Grsai 生成超时 (${maxAttempts * 2}秒)`);
+        }
+
+
 
         // === ✅ ModelScope 专用通道 (通过代理 API, 异步轮询模式) ===
         if (imageModel.provider === 'modelscope' || imageModel.baseUrl?.includes('modelscope.cn')) {
@@ -708,9 +860,7 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
             return "https://via.placeholder.com/1024?text=Google+Imagen+Placeholder";
         }
 
-        const endpoint = imageModel.provider === 'aliyun'
-            ? imageModel.baseUrl
-            : `${imageModel.baseUrl}/images/generations`;
+        const endpoint = `${imageModel.baseUrl}/images/generations`;
 
         console.log(`📡 [generateVisual] 调用 ${imageModel.provider} API:`, endpoint);
 
@@ -753,6 +903,16 @@ export const verifyModelConnection = async (config: ModelConfig): Promise<{ succ
         // 智能补全
         if (baseUrl && !baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
 
+        // 🚨 Global Auto-Fix: Update old dashboard URL (grsai.ai) to new API domain (grsaiapi.com)
+        // New Domain: grsaiapi.com
+        if (baseUrl.includes('grsai') && !baseUrl.includes('grsaiapi.com')) {
+             baseUrl = 'https://grsaiapi.com';
+        }
+        // 🚨 Global Auto-Fix: Ensure /v1
+        if (baseUrl.includes('grsaiapi.com') && !baseUrl.includes('/v1')) {
+            baseUrl = 'https://grsaiapi.com/v1';
+        }
+
         console.log(`[Strict Test] Testing ${config.name} (${config.provider})...`);
 
         // === 场景 A: ModelScope 特殊测试 ===
@@ -786,7 +946,44 @@ export const verifyModelConnection = async (config: ModelConfig): Promise<{ succ
             return { success: true, msg: "ModelScope (Image) 连接成功" };
         }
 
-        // === 场景 B: 文本/多模态模型 (真·对话测试) ===
+        // === 场景 C: Grsai 连通性测试 (Standard Chat) ===
+        if (config.provider === 'grsai') {
+             // Forced Correct Base URL
+             const baseUrl = 'https://grsaiapi.com/v1'; 
+             const chatUrl = `${baseUrl}/chat/completions`;
+             
+             console.log(`[Strict Test] Testing Grsai via Chat API: ${chatUrl} (Proxy)`);
+             
+             try {
+                const res = await fetch(getProxiedUrl(chatUrl), {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${config.apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: config.modelId || 'gpt-4o-mini', // Default fallback
+                        messages: [{ role: 'user', content: 'Hi' }],
+                        max_tokens: 1
+                    })
+                });
+
+                if (res.status === 401) throw new Error("认证失败：API Key 无效");
+                if (res.status === 404) throw new Error("地址错误：未找到 API 端点");
+                
+                // 400 (Bad Request) usually means params error but auth passed. 200 is success.
+                if (!res.ok && res.status !== 400) {
+                     const errText = await res.text();
+                     throw new Error(`连接失败 (${res.status}): ${errText}`);
+                }
+                
+                return { success: true, msg: "Grsai 连接成功 (Chat Mode)" };
+             } catch (e: any) {
+                 throw new Error(e.message);
+             }
+        }
+
+        // === 场景 D: 文本/多模态模型 (真·对话测试) ===
         if (config.category === 'text' || config.category === 'multimodal') {
             // Google Gemini 特殊处理 (如果 SDK 未就绪，使用 REST)
             if (config.provider === 'google') {
@@ -865,6 +1062,41 @@ export const verifyModelConnection = async (config: ModelConfig): Promise<{ succ
 
     } catch (e: any) {
         console.error("[Connection Test Failed]", e);
+        
+        // 🆕 全局重试逻辑 (尝试通用代理)
+        if (config.provider === 'custom' || config.provider === 'openai-compatible' || config.provider === 'jiekou') {
+             try {
+                console.log(`[Retry with Proxy] Testing ${config.name} via universal proxy...`);
+                // 重新构建 URL (Copy logic from above)
+                let testUrl = config.baseUrl;
+                if (config.category === 'text' || config.category === 'multimodal') {
+                     if (!testUrl.endsWith('/chat/completions')) {
+                        testUrl = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
+                    }
+                    const res = await fetch(getProxiedUrl(testUrl), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.apiKey}` },
+                        body: JSON.stringify({ model: config.modelId, messages: [{ role: 'user', content: 'Hi' }], max_tokens: 1 })
+                    });
+                     if (res.ok || res.status === 400) return { success: true, msg: "连接成功 (via Proxy)" };
+                     if (res.status === 401) throw new Error("认证失败");
+                } else if (!config.baseUrl.includes('modelscope')) {
+                      // Image defaults
+                      let listUrl = config.baseUrl;
+                        if (config.baseUrl.endsWith('/v1')) listUrl = `${config.baseUrl}/models`;
+                        else if (!config.baseUrl.endsWith('/models')) listUrl = `${config.baseUrl.replace(/\/$/, '')}/models`;
+                        
+                        const res = await fetch(getProxiedUrl(listUrl), {
+                            method: 'GET',
+                            headers: { 'Authorization': `Bearer ${config.apiKey}` }
+                        });
+                        if (res.ok) return { success: true, msg: "连接成功 (via Proxy)" };
+                }
+             } catch (proxyErr) {
+                 console.error("Proxy retry failed", proxyErr);
+             }
+        }
+
         return { success: false, msg: e.message || "未知连接错误" };
     }
 };
@@ -932,6 +1164,16 @@ export const chatWithAI = async (
         // OpenAI Compatible (including ModelScope, DashScope, etc.)
         let endpoint = modelConfig.baseUrl;
 
+        // 🚨 Grsai Auto-Fix (grsaiapi.com)
+        if (modelConfig.provider === 'grsai') {
+             if (endpoint.includes('grsai') && !endpoint.includes('grsaiapi.com')) {
+                 endpoint = 'https://grsaiapi.com';
+             }
+             if (endpoint.includes('grsaiapi.com') && !endpoint.includes('/v1')) {
+                 endpoint = 'https://grsaiapi.com/v1';
+             }
+        }
+
         // Apply Proxy for ModelScope to avoid CORS
         if (modelConfig.provider === 'modelscope' || endpoint.includes('modelscope.cn')) {
             // Check if running in browser environment to avoid affecting server-side (if any)
@@ -991,7 +1233,7 @@ export const chatWithAI = async (
             });
         });
 
-        const response = await fetch(endpoint, {
+        const response = await fetch(getProxiedUrl(endpoint), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
