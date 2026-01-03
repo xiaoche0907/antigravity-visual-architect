@@ -1,6 +1,7 @@
 import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+// cspell:ignore modelscope Tongyi dashscope
 
 // 自定义插件：处理 ModelScope API 代理
 function modelScopeProxyPlugin(): Plugin {
@@ -98,6 +99,17 @@ function universalProxyPlugin(): Plugin {
           return next();
         }
 
+        // Handle CORS preflight
+        if (req.method === 'OPTIONS') {
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+          res.setHeader('Access-Control-Max-Age', '86400');
+          res.statusCode = 204;
+          res.end();
+          return;
+        }
+
         const url = new URL(req.url, 'http://localhost');
         const targetUrl = url.searchParams.get('url');
 
@@ -110,34 +122,51 @@ function universalProxyPlugin(): Plugin {
         try {
           const authHeader = req.headers.authorization;
           const contentType = req.headers['content-type'];
+          
+          // Read body for non-GET requests
+          let body: string | undefined;
+          if (req.method !== 'GET' && req.method !== 'HEAD') {
+            body = await readBody(req);
+          }
 
           // 构建请求
-          const fetchOptions: RequestInit = {
-            method: req.method,
-            headers: {},
-            // Only attach body for non-GET/HEAD methods
-            body: (req.method !== 'GET' && req.method !== 'HEAD') ? await readBody(req) : undefined,
-          };
+          const fetchHeaders: Record<string, string> = {};
+          if (authHeader) fetchHeaders['Authorization'] = authHeader;
+          if (contentType) fetchHeaders['Content-Type'] = contentType;
 
-          // 转发 Headers
-          if (authHeader) fetchOptions.headers!['Authorization'] = authHeader;
-          if (contentType) fetchOptions.headers!['Content-Type'] = contentType;
-          // Add custom headers if needed
-          fetchOptions.headers!['X-Forwarded-For'] = '127.0.0.1';
+          console.log(`[Universal Proxy] ${req.method} -> ${targetUrl}`);
+          console.log(`[Universal Proxy] Auth: ${authHeader ? 'Bearer ***' : 'MISSING!'}`);
+          if (body) console.log(`[Universal Proxy] Body: ${body.substring(0, 200)}...`);
 
-          console.log(`[Universal Proxy] Proxying ${req.method} to: ${targetUrl}`);
+          // Add timeout (300 seconds / 5 minutes)
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 300000);
 
-          const response = await fetch(targetUrl, fetchOptions);
-          const data = await response.text();
+          try {
+            const response = await fetch(targetUrl, {
+              method: req.method,
+              headers: fetchHeaders,
+              body: body,
+              signal: controller.signal,
+            });
+            
+            clearTimeout(timeoutId);
+            
+            const data = await response.text();
+            console.log(`[Universal Proxy] Response ${response.status}: ${data.substring(0, 200)}...`);
 
-          // 设置响应头
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Content-Type', response.headers.get('content-type') || 'application/json');
-          res.statusCode = response.status;
-          res.end(data);
+            // 设置响应头
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Content-Type', response.headers.get('content-type') || 'application/json');
+            res.statusCode = response.status;
+            res.end(data);
+          } catch (fetchError: any) {
+            clearTimeout(timeoutId);
+            throw fetchError;
+          }
 
         } catch (error: any) {
-          console.error('[Universal Proxy] Error:', error);
+          console.error('[Universal Proxy] Error:', error.message);
           res.statusCode = 500;
           res.end(JSON.stringify({ error: error.message }));
         }

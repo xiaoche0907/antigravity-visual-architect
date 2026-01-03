@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { AppConfig, BrainProvider, MarketingStrategy, RoleFocus, ProductInput, ChatMessage } from "../types";
-// cspell:ignore genai Nanobannan DALL Aliyun Volcengine volcengine modelscope dall wanx Wanx Jiekou Grsai grsai Imagen Zhipu Apisix grsaiapi
+// cspell:ignore genai Nanobannan DALL Aliyun Volcengine volcengine modelscope dall wanx Wanx Jiekou Grsai grsai Imagen Zhipu Apisix grsaiapi dakka
 import { ModelConfig } from "../types/models";
 import { ROLE_FOCUS_PROMPTS } from "../constants";
 
@@ -599,8 +599,9 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
             };
 
             // 🟢 Special handling for Image Editing / Reference Image
-            if (imageModel.modelId === 'gemini-3-pro-image-edit' && referenceImages.length > 0) {
-                console.log(`🖼️ [generateVisual] Using ${referenceImages.length} reference images for editing...`);
+            // 🟢 Special handling for Reference Images (Universal)
+            if (referenceImages.length > 0) {
+                console.log(`🖼️ [generateVisual] Using ${referenceImages.length} reference images for ${imageModel.modelId}...`);
 
                 // Check if images are Base64 or URLs
                 const base64s: string[] = [];
@@ -608,18 +609,25 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
 
                 referenceImages.forEach(img => {
                     if (img.startsWith('data:')) {
-                        // Strip header for API if needed, but usually keep it safe or strip?
-                        // User example had "image_base64s". Let's assume standard base64 string (often without header in some APIs, but with header in others).
-                        // Safest for many "image_base64s" fields is usually WITHOUT the data:image/...;base64, prefix.
-                        // Let's strip it to be safe as "base64" usually implies the raw data.
+                        // Strip header for API if needed
                         base64s.push(img.split(',')[1]);
                     } else if (img.startsWith('http')) {
                         urls.push(img);
                     }
                 });
 
-                if (base64s.length > 0) payload.image_base64s = base64s;
-                if (urls.length > 0) payload.image_urls = urls;
+                // Add parameters potentially supported by various downstream adapters
+                if (base64s.length > 0) {
+                    payload.image_base64s = base64s;
+                    // Wanx / ModelScope might like singular 'image' or 'img_url'
+                    payload.image = base64s[0]; 
+                }
+                if (urls.length > 0) {
+                    payload.image_urls = urls;
+                    // Wanx often uses 'img_url' or 'base_image_url'
+                    payload.img_url = urls[0];
+                    payload.base_image_url = urls[0];
+                }
             }
 
             const res = await fetch(getProxiedUrl(targetUrl), {
@@ -659,14 +667,27 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
         if (imageModel.provider === 'grsai' || imageModel.baseUrl?.includes('grsai')) {
              console.log('🍌 [generateVisual] Grsai nano-banana Detected (Async Draw API)...');
              
-             // Determine host - use configured or default to overseas
-             let host = 'https://grsaiapi.com';
-             if (imageModel.baseUrl?.includes('dakka.com.cn')) {
-                 host = 'https://grsai.dakka.com.cn';
+             // Determine host - prioritize user config
+             // TRUST MODE: We trust the user's config fully, only auto-remove trailing slash
+             // NOTE: Docs recommend 'https://grsai.ai' for China users, 'https://grsaiapi.com' for global.
+             let host = imageModel.baseUrl?.replace(/\/$/, '') || 'https://grsaiapi.com';
+
+             // Handle potential /v1 suffix in user config (Common Pitfall)
+             if (host.endsWith('/v1')) {
+                 host = host.substring(0, host.length - 3);
              }
+
+             const modelId = imageModel.modelId?.trim() || 'nano-banana';
              
-             const modelId = imageModel.modelId || 'nano-banana';
-             const drawEndpoint = `${host}/v1/draw/${modelId}`;
+             // FIX: Nano Banana API endpoint is FIXED to /v1/draw/nano-banana regardless of the specific model variant (Pro/Basic)
+             // The specific model variant is passed in the JSON body if supported, or the endpoint handles it.
+             // We map 'nano-banana-pro' etc. to the base endpoint.
+             let drawPath = `/v1/draw/${modelId}`;
+             if (modelId.includes('nano-banana')) {
+                 drawPath = '/v1/draw/nano-banana';
+             }
+
+             const drawEndpoint = `${host}${drawPath}`;
              const resultEndpoint = `${host}/v1/draw/result`;
 
              console.log(`📡 [generateVisual] Submitting to Grsai: ${drawEndpoint}`);
@@ -680,11 +701,14 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
                  webHook: "-1"    // Return task ID for polling
              };
              
-             // Add reference images if provided (uses 'urls' array per API docs)
-             if (referenceImages && referenceImages.length > 0) {
-                 console.log(`🖼️ [generateVisual] Adding ${referenceImages.length} reference image(s) to Grsai payload...`);
-                 drawPayload.urls = referenceImages;
-             }
+             // Add reference images if provided
+            if (referenceImages && referenceImages.length > 0) {
+                console.log(`🖼️ [generateVisual] Adding ${referenceImages.length} reference image(s) to Grsai payload (image_urls)...`);
+                // FIX: Use 'image_urls' (standard) and 'images' (alias) and 'urls' (legacy) to cover all bases
+                drawPayload.image_urls = referenceImages;
+                drawPayload.images = referenceImages; 
+                drawPayload.urls = referenceImages; // Keep legacy just in case
+            }
 
              // Add aspect ratio if specified
              if (aspectRatio) {
@@ -716,7 +740,7 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
 
              if (!submitRes.ok) {
                  const errText = await submitRes.text();
-                 throw new Error(`Grsai 提交失败 (${submitRes.status}): ${errText}`);
+                 throw new Error(`Grsai 提交失败 (${submitRes.status}) [URL: ${drawEndpoint}]: ${errText}`);
              }
 
              const submitData = await submitRes.json();
@@ -734,7 +758,7 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
 
              // 2. Poll for Result
              let attempts = 0;
-             const maxAttempts = 60; // 60 * 2s = 120s timeout
+             const maxAttempts = 240; // 240 * 2s = 480s timeout (8 minutes)
 
              while (attempts < maxAttempts) {
                  attempts++;
@@ -803,18 +827,44 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
             const optimizedPrompt = await summarizePromptForModelScope(prompt, textModelForSummarize || null);
             console.log(`🔤 [ModelScope] Prompt: ${prompt.length} -> ${optimizedPrompt.length} 字`);
 
-            const submitRes = await fetch(postUrl, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${imageModel.apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: imageModel.modelId,
-                    prompt: optimizedPrompt,
-                    size: size
-                })
-            });
+            const submitPayload: any = {
+            model: imageModel.modelId,
+            input: {
+                prompt: optimizedPrompt
+            },
+            parameters: {
+               size: size
+            }
+        };
+
+        // Simple schema for some proxies
+        const simplePayload: any = {
+             model: imageModel.modelId,
+             prompt: optimizedPrompt,
+             size: size
+        };
+        
+        // 🟢 Add Reference Image for ModelScope (ControlNet / i2i)
+        if (referenceImages && referenceImages.length > 0) {
+            console.log(`🖼️ [generateVisual] Adding reference image to ModelScope payload...`);
+            // Standard params for many pipelines
+            submitPayload.input.image = referenceImages[0];
+            simplePayload.image = referenceImages[0];
+            simplePayload.img_url = referenceImages[0];
+        }
+
+        const submitRes = await fetch(getProxiedUrl(postUrl), {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${imageModel.apiKey}`,
+                'Content-Type': 'application/json',
+                // Async Mode Header
+                'X-ModelScope-Async-Mode': 'true',
+                'X-ModelScope-Task-Type': 'image_generation'
+            },
+            // Try simple payload first as it matches previous structure, but enriched
+            body: JSON.stringify(simplePayload)
+        });
 
             if (!submitRes.ok) {
                 const errText = await submitRes.text();
