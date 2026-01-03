@@ -113,7 +113,15 @@ export const RECOMMENDED_IMAGE_MODELS: Record<ProviderType, string[]> = {
     modelscope: ['Tongyi-MAI/Z-Image-Turbo', 'Tongyi-MAI/Z-Image', 'stabilityai/stable-diffusion-xl', 'stabilityai/stable-diffusion-3-medium'],
     'openai-compatible': ['gemini-3-pro-image-preview', 'gemini-2.5-flash-image', 'gemini-2.5-flash-image-preview'],
     jiekou: ['gemini-3-pro-image-text-to-image', 'gemini-3-pro-image-edit'],
-    grsai: ['nano-banana', 'nano-banana-pro', 'nano-banana-fast'],
+    grsai: [
+        'nano-banana-fast',      // 快速版
+        'nano-banana',           // 标准版
+        'nano-banana-pro',       // 专业版
+        'nano-banana-pro-vt',    // 专业版 VT
+        'nano-banana-pro-cl',    // 专业版 CL
+        'nano-banana-pro-vip',   // VIP 版
+        'nano-banana-pro-4k-vip' // 4K VIP 版
+    ],
     custom: []
 };
 

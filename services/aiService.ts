@@ -672,16 +672,38 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
              console.log(`📡 [generateVisual] Submitting to Grsai: ${drawEndpoint}`);
 
              // 1. Submit Draw Task
+             // Required fields: model, prompt
+             // Optional: urls (reference images), aspectRatio, imageSize, webHook
              const drawPayload: any = {
-                 prompt: prompt
+                 model: modelId,  // Required!
+                 prompt: prompt,
+                 webHook: "-1"    // Return task ID for polling
              };
              
-             // Add reference image if provided
+             // Add reference images if provided (uses 'urls' array per API docs)
              if (referenceImages && referenceImages.length > 0) {
-                 console.log(`🖼️ [generateVisual] Adding reference image to Grsai payload...`);
-                 // Based on API docs, likely uses image_url or image field
-                 drawPayload.image = referenceImages[0];
+                 console.log(`🖼️ [generateVisual] Adding ${referenceImages.length} reference image(s) to Grsai payload...`);
+                 drawPayload.urls = referenceImages;
              }
+
+             // Add aspect ratio if specified
+             if (aspectRatio) {
+                 drawPayload.aspectRatio = aspectRatio;
+             }
+             
+             // Add resolution/size
+             if (resolution) {
+                 // Map 1024x1024 -> "1K", 2048x2048 -> "2K", etc.
+                 if (resolution.includes('2048') || resolution.includes('2K')) {
+                     drawPayload.imageSize = '2K';
+                 } else if (resolution.includes('4096') || resolution.includes('4K')) {
+                     drawPayload.imageSize = '4K';
+                 } else {
+                     drawPayload.imageSize = '1K';
+                 }
+             }
+
+             console.log(`📦 [generateVisual] Grsai Payload:`, JSON.stringify(drawPayload));
 
              const submitRes = await fetch(getProxiedUrl(drawEndpoint), {
                  method: 'POST',
