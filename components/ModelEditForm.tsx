@@ -389,6 +389,47 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
                 }
             }
 
+            // === Zhipu AI (智谱) ===
+            else if (formData.provider === 'zhipu') {
+                try {
+                    let endpoint = formData.baseUrl;
+                    // Ensure ends with /models
+                    if (!endpoint.endsWith('/models')) {
+                        // Remove trailing slash and append /models, but be careful if it already ends with /v4
+                        endpoint = endpoint.replace(/\/$/, '');
+                        endpoint = `${endpoint}/models`;
+                    }
+
+                    const response = await fetch(endpoint, {
+                        headers: {
+                            'Authorization': `Bearer ${formData.apiKey}`
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`连接失败: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+
+                    // Zhipu response format check
+                    models = (data.data || []).map((m: any) => m.id);
+
+                    // If empty, throw to trigger fallback
+                    if (!models || models.length === 0) {
+                        throw new Error('未找到模型');
+                    }
+
+                } catch (error) {
+                    console.warn('智谱模型列表获取失败，使用推荐列表', error);
+                    models = formData.category === 'text'
+                        ? RECOMMENDED_TEXT_MODELS.zhipu
+                        : formData.category === 'image'
+                            ? RECOMMENDED_IMAGE_MODELS.zhipu
+                            : RECOMMENDED_MULTIMODAL_MODELS.zhipu;
+                }
+            }
+
             if (models.length === 0) {
                 throw new Error('未获取到任何模型，请检查 API 配置或手动输入模型 ID');
             }

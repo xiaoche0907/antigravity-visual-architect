@@ -7,6 +7,7 @@ export enum RoleFocus {
   TECHNICAL = "TECHNICAL",
   LIFESTYLE = "LIFESTYLE",
   BALANCED = "BALANCED",
+  VISUAL_ARCHITECT = "VISUAL_ARCHITECT",
 }
 
 export type BrainProvider =
@@ -28,12 +29,12 @@ export interface AppConfig {
   };
   visual: {
     provider:
-      | "modelscope"
-      | "google"
-      | "openai"
-      | "custom"
-      | "gemini"
-      | "grsai";
+    | "modelscope"
+    | "google"
+    | "openai"
+    | "custom"
+    | "gemini"
+    | "grsai";
     model: string;
     baseUrl: string;
     useSameKeyAsBrain: boolean;

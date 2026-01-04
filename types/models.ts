@@ -9,7 +9,7 @@ export type ModelCategory = 'text' | 'image' | 'multimodal';
 
 // 提供商类型
 // cspell:ignore aliyun volcengine modelscope jiekou grsai qwen wanx doubao deepseek imagen dall Tongyi stabilityai Zhipu
-export type ProviderType = 'google' | 'openai' | 'aliyun' | 'volcengine' | 'modelscope' | 'custom' | 'openai-compatible' | 'jiekou' | 'grsai';
+export type ProviderType = 'google' | 'openai' | 'aliyun' | 'volcengine' | 'modelscope' | 'custom' | 'openai-compatible' | 'jiekou' | 'grsai' | 'zhipu';
 
 /**
  * 模型配置接口 - 每个配置都是一个独立的资产
@@ -67,6 +67,10 @@ export const PROVIDER_DEFAULTS: Record<ProviderType, { baseUrl: string; name: st
     grsai: {
         name: 'Grsai',
         baseUrl: 'https://grsaiapi.com'
+    },
+    zhipu: {
+        name: '智谱 AI (ZhipuAI)',
+        baseUrl: 'https://open.bigmodel.cn/api/paas/v4/'
     }
 };
 
@@ -77,14 +81,15 @@ export const RECOMMENDED_MULTIMODAL_MODELS: Record<ProviderType, string[]> = {
     openai: ['gpt-4o', 'gpt-4-turbo'],
     volcengine: [],
     modelscope: [
-        'Qwen/Qwen3-VL-235B-A22B-Instruct',
+        'Qwen/Qwen2.5-VL-72B-Instruct',
         'Qwen/Qwen2-VL-72B-Instruct',
         'Qwen/Qwen2-VL-7B-Instruct'
     ],
     'openai-compatible': [],
     jiekou: [],
     grsai: [],
-    custom: []
+    custom: [],
+    zhipu: ['glm-4v', 'glm-4v-plus']
 };
 
 /**
@@ -95,11 +100,12 @@ export const RECOMMENDED_TEXT_MODELS: Record<ProviderType, string[]> = {
     aliyun: ['qwen-max', 'qwen-plus', 'qwen-turbo', 'qwen-long'],
     openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'],
     volcengine: ['doubao-pro-32k', 'doubao-lite-4k', 'ep-20241228-xxxxx'],
-    modelscope: ['ZhipuAI/GLM-4.7', 'Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-Coder-32B-Instruct'],
+    modelscope: ['Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-Coder-32B-Instruct', 'Qwen/Qwen2.5-7B-Instruct'],
     'openai-compatible': ['deepseek-chat', 'moonshot-v1-8k', 'yi-large', 'llama2'],
     jiekou: [],
     grsai: ['gemini-3-pro', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
-    custom: []
+    custom: [],
+    zhipu: ['glm-4-plus', 'glm-4-0520', 'glm-4-air', 'glm-4-flash', 'glm-4-long']
 };
 
 /**
@@ -122,7 +128,8 @@ export const RECOMMENDED_IMAGE_MODELS: Record<ProviderType, string[]> = {
         'nano-banana-pro-vip',   // VIP 版
         'nano-banana-pro-4k-vip' // 4K VIP 版
     ],
-    custom: []
+    custom: [],
+    zhipu: ['cogview-3', 'cogview-3-plus']
 };
 
 /**

@@ -448,6 +448,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                     <option value={RoleFocus.BALANCED}>均衡策略</option>
                                     <option value={RoleFocus.TECHNICAL}>硬核参数</option>
                                     <option value={RoleFocus.LIFESTYLE}>生活场景</option>
+                                    <option value={RoleFocus.VISUAL_ARCHITECT}>A9 视觉总监 (Expert)</option>
                                 </select>
                             </div>
                         </div>

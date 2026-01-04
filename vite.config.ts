@@ -122,7 +122,7 @@ function universalProxyPlugin(): Plugin {
         try {
           const authHeader = req.headers.authorization;
           const contentType = req.headers['content-type'];
-          
+
           // Read body for non-GET requests
           let body: string | undefined;
           if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -149,9 +149,9 @@ function universalProxyPlugin(): Plugin {
               body: body,
               signal: controller.signal,
             });
-            
+
             clearTimeout(timeoutId);
-            
+
             const data = await response.text();
             console.log(`[Universal Proxy] Response ${response.status}: ${data.substring(0, 200)}...`);
 
@@ -166,9 +166,13 @@ function universalProxyPlugin(): Plugin {
           }
 
         } catch (error: any) {
-          console.error('[Universal Proxy] Error:', error.message);
+          console.error('[Universal Proxy] Error:', error);
           res.statusCode = 500;
-          res.end(JSON.stringify({ error: error.message }));
+          res.end(JSON.stringify({
+            error: error.message,
+            cause: error.cause ? String(error.cause) : undefined,
+            details: 'Proxy fetch failed. Check terminal for more info.'
+          }));
         }
       });
     }
