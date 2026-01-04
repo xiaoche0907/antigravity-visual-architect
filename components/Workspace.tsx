@@ -10,6 +10,7 @@ interface WorkspaceProps {
     // Model Configs
     modelConfigs: ModelConfig[];
     selectedBrainModelId: string;
+    selectedPromptEngineerModelId: string;
     selectedVisualModelId: string;
 
     // Lifted State
@@ -38,6 +39,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
     onNavigateSettings,
     modelConfigs,
     selectedBrainModelId,
+    selectedPromptEngineerModelId,
     selectedVisualModelId,
     loadingState, setLoadingState,
     activeTab, setActiveTab,
@@ -69,6 +71,17 @@ const Workspace: React.FC<WorkspaceProps> = ({
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    };
+
+    // 🆕 Copy to Clipboard Helper
+    const copyToClipboard = async (text: string) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            showToast('✅ 已复制到剪贴板');
+        } catch (err) {
+            console.error('复制失败:', err);
+            showToast('❌ 复制失败');
+        }
     };
 
 
@@ -125,9 +138,29 @@ const Workspace: React.FC<WorkspaceProps> = ({
         showToast('🧠 策略大脑正在分析 A9 转化要素...');
 
         try {
-            // === Step 1: 策略大脑工作 ===
+            // --- 4. 锁定【视觉技术总监】(Prompt Engineer Model) ---
+            const promptEngineerConfig = modelConfigs.find(m => m.id === selectedPromptEngineerModelId);
+            const promptEngineerInstruction = localStorage.getItem('custom_prompt_engineer_instruction') || '';
+            console.log('🔗 [Workspace] 锁定视觉技术总监:', promptEngineerConfig ? `${promptEngineerConfig.name}` : '❌ 未选择 (将跳过)');
+
+            // === Step 1: 策略大脑工作 (+ 可选的 Prompt Engineer) ===
             console.log('🧠 [Step 1] 策略模型正在拆解用户痛点与卖点...');
-            const strategyData = await generateMarketingStrategy(input, roleFocus, brainConfig || null, config);
+            const strategyData = await generateMarketingStrategy(
+                input,
+                roleFocus,
+                brainConfig || null,
+                config,
+                // Pass Prompt Engineer config if available
+                promptEngineerConfig && promptEngineerConfig.isEnabled ? {
+                    model: promptEngineerConfig,
+                    instruction: promptEngineerInstruction
+                } : undefined,
+                // 🆕 Progress callback for real-time UI updates
+                (stage, message) => {
+                    console.log(`📢 [UI Progress] ${stage}: ${message}`);
+                    showToast(message);
+                }
+            );
 
             // 🛡️ 数据完整性验证
             if (!strategyData) {
@@ -701,7 +734,16 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                 <summary className="text-[10px] text-gray-500 cursor-pointer list-none flex items-center gap-2 hover:text-gray-300">
                                                                     <span className="group-open:rotate-90 transition-transform">▶</span> Show MJ Prompt
                                                                 </summary>
-                                                                <p className="mt-2 text-[10px] font-mono text-gray-500 bg-black p-2 rounded selectable">{String(img.visualPrompt || 'No Prompt')}</p>
+                                                                <div className="mt-2 relative">
+                                                                    <p className="text-[10px] font-mono text-gray-500 bg-black p-2 pr-16 rounded selectable">{String(img.visualPrompt || 'No Prompt')}</p>
+                                                                    <button
+                                                                        onClick={() => copyToClipboard(String(img.visualPrompt || ''))}
+                                                                        className="absolute top-1 right-1 px-2 py-1 bg-[#3c4043] hover:bg-[#A8C7FA] text-white text-[10px] rounded transition-colors"
+                                                                        title="复制提示词"
+                                                                    >
+                                                                        📋 复制
+                                                                    </button>
+                                                                </div>
                                                             </details>
                                                         </div>
                                                     </div>
@@ -833,7 +875,16 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                 <summary className="text-[10px] text-gray-500 cursor-pointer list-none flex items-center gap-2 hover:text-gray-300">
                                                                     <span className="group-open:rotate-90 transition-transform">▶</span> Show Image Prompt
                                                                 </summary>
-                                                                <p className="mt-2 text-[10px] font-mono text-gray-500 bg-black p-2 rounded selectable">{String(m.visualPrompt || m.visualGuidance || '无生图提示词')}</p>
+                                                                <div className="mt-2 relative">
+                                                                    <p className="text-[10px] font-mono text-gray-500 bg-black p-2 pr-16 rounded selectable">{String(m.visualPrompt || m.visualGuidance || '无生图提示词')}</p>
+                                                                    <button
+                                                                        onClick={() => copyToClipboard(String(m.visualPrompt || m.visualGuidance || ''))}
+                                                                        className="absolute top-1 right-1 px-2 py-1 bg-[#3c4043] hover:bg-[#A8C7FA] text-white text-[10px] rounded transition-colors"
+                                                                        title="复制提示词"
+                                                                    >
+                                                                        📋 复制
+                                                                    </button>
+                                                                </div>
                                                             </details>
                                                         </div>
                                                     </div>

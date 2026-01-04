@@ -59,8 +59,9 @@ const App: React.FC = () => {
     return [];
   });
 
-  // Selected model IDs for Brain and Visual
+  // Selected model IDs for Brain, Prompt Engineer, and Visual
   const [selectedBrainModelId, setSelectedBrainModelId] = useState<string>('');
+  const [selectedPromptEngineerModelId, setSelectedPromptEngineerModelId] = useState<string>('');
   const [selectedVisualModelId, setSelectedVisualModelId] = useState<string>('');
 
   // --- WORKSPACE STATE (LIFTED) ---
@@ -209,6 +210,7 @@ const App: React.FC = () => {
             // Model Configs
             modelConfigs={modelConfigs}
             selectedBrainModelId={selectedBrainModelId}
+            selectedPromptEngineerModelId={selectedPromptEngineerModelId}
             selectedVisualModelId={selectedVisualModelId}
             // Parameters
             loadingState={loadingState} setLoadingState={setLoadingState}
@@ -231,8 +233,10 @@ const App: React.FC = () => {
             setConfig={setConfig}
             modelConfigs={modelConfigs}
             selectedBrainModelId={selectedBrainModelId}
+            selectedPromptEngineerModelId={selectedPromptEngineerModelId}
             selectedVisualModelId={selectedVisualModelId}
             onBrainModelChange={setSelectedBrainModelId}
+            onPromptEngineerModelChange={setSelectedPromptEngineerModelId}
             onVisualModelChange={setSelectedVisualModelId}
             onNavigateToModels={() => setCurrentView('models')}
           />

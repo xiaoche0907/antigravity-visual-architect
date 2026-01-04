@@ -1,35 +1,45 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppConfig } from '../types';
 import { ModelConfig } from '../types/models';
-import { DEFAULT_SYSTEM_INSTRUCTION } from '../constants';
+import { DEFAULT_SYSTEM_INSTRUCTION, PROMPT_ENGINEER_SYSTEM_INSTRUCTION } from '../constants';
 
 interface EmployeeConfigProps {
     config: AppConfig;
     setConfig: React.Dispatch<React.SetStateAction<AppConfig>>;
     modelConfigs: ModelConfig[];
     selectedBrainModelId: string;
+    selectedPromptEngineerModelId: string;
     selectedVisualModelId: string;
     onBrainModelChange: (modelId: string) => void;
+    onPromptEngineerModelChange: (modelId: string) => void;
     onVisualModelChange: (modelId: string) => void;
     onNavigateToModels: () => void;
 }
 
 const LOCALSTORAGE_KEY = 'custom_amazon_expert_prompt';
+const LOCALSTORAGE_PROMPT_ENGINEER_KEY = 'custom_prompt_engineer_instruction';
 
 const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
     config,
     setConfig,
     modelConfigs,
     selectedBrainModelId,
+    selectedPromptEngineerModelId,
     selectedVisualModelId,
     onBrainModelChange,
+    onPromptEngineerModelChange,
     onVisualModelChange,
     onNavigateToModels
 }) => {
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+    const [promptEngineerSaveStatus, setPromptEngineerSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
     const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const promptEngineerSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
     const isInitialLoadRef = useRef(true);
+
+    // 视觉技术总监的系统指令 (Local State)
+    const [promptEngineerInstruction, setPromptEngineerInstruction] = useState<string>('');
 
     // 过滤可用的模型配置
     const enabledTextModels = modelConfigs.filter(m => m.category === 'text' && m.isEnabled);
@@ -49,6 +59,18 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
             localStorage.setItem(LOCALSTORAGE_KEY, DEFAULT_SYSTEM_INSTRUCTION);
             console.log('📦 [EmployeeConfig] 首次加载，已保存默认模板');
         }
+
+        // 加载 Prompt Engineer 指令
+        const savedPEPrompt = localStorage.getItem(LOCALSTORAGE_PROMPT_ENGINEER_KEY);
+        if (savedPEPrompt) {
+            setPromptEngineerInstruction(savedPEPrompt);
+            console.log('✅ [EmployeeConfig] 已加载视觉技术总监指令');
+        } else {
+            setPromptEngineerInstruction(PROMPT_ENGINEER_SYSTEM_INSTRUCTION);
+            localStorage.setItem(LOCALSTORAGE_PROMPT_ENGINEER_KEY, PROMPT_ENGINEER_SYSTEM_INSTRUCTION);
+            console.log('📦 [EmployeeConfig] 首次加载，已保存视觉技术总监默认模板');
+        }
+
         isInitialLoadRef.current = false;
     }, []); // 只在组件挂载时执行一次
 
@@ -83,6 +105,31 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
         };
     }, [config.brain.systemInstruction]);
 
+    // 监听 promptEngineerInstruction 变化，自动保存
+    useEffect(() => {
+        if (isInitialLoadRef.current) return;
+        if (!promptEngineerInstruction) return;
+
+        if (promptEngineerSaveTimerRef.current) {
+            clearTimeout(promptEngineerSaveTimerRef.current);
+        }
+
+        setPromptEngineerSaveStatus('saving');
+
+        promptEngineerSaveTimerRef.current = setTimeout(() => {
+            localStorage.setItem(LOCALSTORAGE_PROMPT_ENGINEER_KEY, promptEngineerInstruction);
+            setPromptEngineerSaveStatus('saved');
+            console.log('💾 [EmployeeConfig] 视觉技术总监指令已保存');
+            setTimeout(() => setPromptEngineerSaveStatus('idle'), 2000);
+        }, 800);
+
+        return () => {
+            if (promptEngineerSaveTimerRef.current) {
+                clearTimeout(promptEngineerSaveTimerRef.current);
+            }
+        };
+    }, [promptEngineerInstruction]);
+
     const showToast = (msg: string) => {
         setToastMessage(msg);
         setTimeout(() => setToastMessage(null), 3000);
@@ -102,6 +149,15 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
         handleBrainChange('systemInstruction', DEFAULT_SYSTEM_INSTRUCTION);
         localStorage.setItem(LOCALSTORAGE_KEY, DEFAULT_SYSTEM_INSTRUCTION);
         showToast('🔄 已恢复默认人设');
+    };
+
+    const resetPromptEngineerToDefault = () => {
+        if (!confirm('⚠️ 确定要恢复视觉技术总监的默认指令吗？')) {
+            return;
+        }
+        setPromptEngineerInstruction(PROMPT_ENGINEER_SYSTEM_INSTRUCTION);
+        localStorage.setItem(LOCALSTORAGE_PROMPT_ENGINEER_KEY, PROMPT_ENGINEER_SYSTEM_INSTRUCTION);
+        showToast('🔄 已恢复视觉技术总监默认指令');
     };
 
     return (
@@ -209,6 +265,94 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
                                     onChange={(e) => handleBrainChange('systemInstruction', e.target.value)}
                                     className="w-full flex-1 min-h-[300px] bg-[#131314] border border-[#3c4043] rounded-xl p-4 text-xs text-gray-300 font-mono leading-relaxed focus:ring-1 focus:ring-[#A8C7FA] outline-none custom-scrollbar resize-none"
                                     placeholder="请输入智能体的核心指令（例如：你是一名资深亚马逊运营...）"
+                                />
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* 🔗 视觉技术总监 (Prompt Engineer) */}
+                    <section className="bg-[#1e1f20] rounded-3xl border border-[#3c4043] overflow-hidden flex flex-col h-full shadow-2xl">
+                        <div className="p-8 border-b border-[#3c4043] bg-gradient-to-b from-[#2a2a2c] to-[#1e1f20]">
+                            <div className="flex items-center space-x-4 mb-4">
+                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500 to-teal-600 flex items-center justify-center text-white text-2xl shadow-lg shadow-cyan-900/40">
+                                    🔗
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-bold text-white">视觉技术总监 (提示词工程)</h3>
+                                    <p className="text-xs text-cyan-300 font-mono mt-1">ROLE: PROMPT_ENGINEER</p>
+                                </div>
+                            </div>
+                            <p className="text-sm text-gray-400 leading-relaxed">负责将策略官的抽象简报翻译为 Nanobanana Pro 专用的物理级提示词。不懂营销，只懂参数。</p>
+                        </div>
+
+                        <div className="p-8 space-y-6 flex-1 bg-[#1e1f20]">
+                            {/* 模型选择区域 */}
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">
+                                    选择文本模型
+                                </label>
+                                {enabledTextModels.length === 0 ? (
+                                    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
+                                        <p className="text-sm text-yellow-300 mb-3">⚠️ 暂无可用的文本模型配置</p>
+                                        <button
+                                            onClick={onNavigateToModels}
+                                            className="px-4 py-2 bg-yellow-500/20 text-yellow-300 rounded-lg border border-yellow-500/30 hover:bg-yellow-500/30 transition-colors text-xs font-semibold"
+                                        >
+                                            → 前往模型管理添加配置
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        <select
+                                            value={selectedPromptEngineerModelId}
+                                            onChange={(e) => onPromptEngineerModelChange(e.target.value)}
+                                            className="w-full bg-[#131314] border border-[#3c4043] rounded-xl px-4 py-3 text-sm text-white focus:ring-2 focus:ring-cyan-500 outline-none"
+                                        >
+                                            <option value="">-- 选择文本模型配置 --</option>
+                                            {enabledTextModels.map(model => (
+                                                <option key={model.id} value={model.id}>
+                                                    {model.name} ({model.provider} - {model.modelId})
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            onClick={onNavigateToModels}
+                                            className="text-xs text-gray-400 hover:text-cyan-400 transition-colors flex items-center space-x-1"
+                                        >
+                                            <span>⚙️</span>
+                                            <span>管理模型配置</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="space-y-3 flex-1 flex flex-col">
+                                <div className="flex justify-between items-center">
+                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">岗位指令 (System Prompt)</label>
+                                    <div className="flex items-center gap-3">
+                                        {promptEngineerSaveStatus === 'saving' && (
+                                            <span className="text-[10px] text-yellow-400 flex items-center gap-1 animate-pulse">
+                                                <span>💾</span> 保存中...
+                                            </span>
+                                        )}
+                                        {promptEngineerSaveStatus === 'saved' && (
+                                            <span className="text-[10px] text-green-400 flex items-center gap-1">
+                                                <span>✅</span> 已保存
+                                            </span>
+                                        )}
+                                        <button
+                                            onClick={resetPromptEngineerToDefault}
+                                            className="text-[10px] font-bold bg-gray-500/10 text-gray-400 px-3 py-1.5 rounded-lg border border-gray-500/20 hover:bg-gray-500/20 hover:text-gray-300 transition-all flex items-center"
+                                        >
+                                            <span className="mr-1">🔄</span> 恢复默认模板
+                                        </button>
+                                    </div>
+                                </div>
+                                <textarea
+                                    value={promptEngineerInstruction}
+                                    onChange={(e) => setPromptEngineerInstruction(e.target.value)}
+                                    className="w-full flex-1 min-h-[200px] bg-[#131314] border border-[#3c4043] rounded-xl p-4 text-xs text-gray-300 font-mono leading-relaxed focus:ring-1 focus:ring-cyan-500 outline-none custom-scrollbar resize-none"
+                                    placeholder="请输入视觉技术总监的核心指令..."
                                 />
                             </div>
                         </div>

@@ -106,9 +106,22 @@ export const generateMarketingStrategy = async (
     input: ProductInput,
     roleFocus: RoleFocus,
     textModel: ModelConfig | null,
-    config: AppConfig
+    config: AppConfig,
+    // 🆕 Prompt Engineer (Agent B) configuration
+    promptEngineerConfig?: {
+        model: ModelConfig | null;
+        instruction: string;
+    },
+    // 🆕 Progress callback for UI updates
+    onProgress?: (stage: 'strategy' | 'translating' | 'done', message: string) => void
 ): Promise<MarketingStrategy> => {
     console.log('📥 [aiService] generateMarketingStrategy called');
+
+    // Helper to report progress
+    const reportProgress = (stage: 'strategy' | 'translating' | 'done', message: string) => {
+        console.log(`📢 [Progress] ${stage}: ${message}`);
+        onProgress?.(stage, message);
+    };
 
     // 🛡️ Default Error Object (Fallback)
     const errorFallback: MarketingStrategy = {
@@ -181,7 +194,9 @@ export const generateMarketingStrategy = async (
     let rawResponseText = "";
 
     try {
-        // --- API CALL ---
+        // --- STAGE 1: Strategy Director (Agent A) ---
+        reportProgress('strategy', '🧠 策略大脑正在分析 A9 转化要素...');
+        console.log('🧠 [Stage 1] Calling Strategy Director...');
         if (textModel.provider === 'google') {
             const ai = new GoogleGenAI({ apiKey: textModel.apiKey });
             const parts: any[] = [{ text: promptText }];
@@ -292,14 +307,31 @@ export const generateMarketingStrategy = async (
             rawResponseText = data.choices[0]?.message?.content || "";
         }
 
-        // --- NORMALIZATION ---
-        console.log("📝 API Raw Response:", rawResponseText.substring(0, 100) + "...");
-        const parsed = safeJSONParse(rawResponseText);
+        // --- NORMALIZATION (Stage 1 Output) ---
+        console.log("📝 [Stage 1] API Raw Response:", rawResponseText.substring(0, 100) + "...");
+        let parsed = safeJSONParse(rawResponseText);
 
         if (!parsed) {
             console.error("JSON Parse Failed. Raw text:", rawResponseText);
             throw new Error(`无法解析 JSON 响应(内容非 JSON 格式): ${rawResponseText.substring(0, 50)}...`);
         }
+
+        // --- STAGE 2: Prompt Engineer (Agent B) - Optional ---
+        if (promptEngineerConfig?.model && promptEngineerConfig.instruction) {
+            reportProgress('translating', '🔗 视觉技术总监正在翻译为 Nanobanana 提示词...');
+            console.log('🔗 [Stage 2] Calling Prompt Engineer to refine visual prompts...');
+            try {
+                parsed = await refinePromptsWithPromptEngineer(parsed, promptEngineerConfig.model, promptEngineerConfig.instruction);
+                console.log('✅ [Stage 2] Prompts refined successfully.');
+            } catch (peError: any) {
+                console.warn('⚠️ [Stage 2] Prompt Engineer failed, using Stage 1 output:', peError.message);
+                // Continue with Stage 1 output on failure
+            }
+        } else {
+            console.log('⏭️ [Stage 2] Skipped: No Prompt Engineer configured.');
+        }
+
+        reportProgress('done', '✅ 分析完成！');
 
         // Schema Validation / Patching
         return {
@@ -317,6 +349,118 @@ export const generateMarketingStrategy = async (
             rawResponse: rawResponseText
         };
     }
+};
+
+// === 🆕 Prompt Engineer Refinement Function ===
+const refinePromptsWithPromptEngineer = async (
+    strategyData: any,
+    peModel: ModelConfig,
+    peInstruction: string
+): Promise<any> => {
+    // Prepare the input for Prompt Engineer
+    const inputForPE = {
+        secondaryImages: strategyData.secondaryImages?.map((img: any) => ({
+            id: img.id,
+            type: img.type,
+            description: img.description,
+            originalPrompt: img.visualPrompt,
+            copywriting: img.copywriting
+        })) || [],
+        aPlusContent: strategyData.aPlusContent?.map((mod: any) => ({
+            id: mod.id,
+            moduleType: mod.moduleType,
+            content: mod.content,
+            visualGuidance: mod.visualGuidance,
+            originalPrompt: mod.visualPrompt
+        })) || []
+    };
+
+    const pePromptText = `
+You are the Visual Tech Director. Your task is to take the abstract visual descriptions from the Strategy Director and refine them into precise, Nanobanana Pro compliant prompts.
+
+Input from Strategy Director:
+${JSON.stringify(inputForPE, null, 2)}
+
+Action:
+For each item, rewrite the "originalPrompt" field into a highly technical, physics-accurate English prompt following the Nanobanana 6-sentence structure:
+1. [Composition]: Lens, Angle, POV
+2. [Subject]: 3D render style, material
+3. [Lighting]: Studio setup, rim light, GI
+4. [Environment]: Background, context
+5. [Texture/Color]: PBR, SSS, color grading
+6. [Typography]: Text embedding instruction if applicable
+
+Output JSON Schema:
+{
+    "secondaryImages": [
+        { "id": 1, "refinedPrompt": "The new Nanobanana prompt..." },
+        ...
+    ],
+    "aPlusContent": [
+        { "id": 1, "refinedPrompt": "The new Nanobanana prompt..." },
+        ...
+    ]
+}
+
+IMPORTANT: Output ONLY the JSON object above, no explanations.
+`;
+
+    let endpoint = peModel.baseUrl;
+    if (!endpoint.endsWith('/chat/completions')) {
+        endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
+    }
+
+    const res = await fetch(getProxiedUrl(endpoint), {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${peModel.apiKey}`
+        },
+        body: JSON.stringify({
+            model: peModel.modelId,
+            messages: [
+                { role: "system", content: peInstruction },
+                { role: "user", content: pePromptText }
+            ],
+            temperature: 0.5,
+            response_format: { type: "json_object" }
+        })
+    });
+
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Prompt Engineer API failed (${res.status}): ${errText}`);
+    }
+
+    const data = await res.json();
+    const peResponseText = data.choices?.[0]?.message?.content || "";
+    const peResult = safeJSONParse(peResponseText);
+
+    if (!peResult) {
+        throw new Error(`Prompt Engineer returned invalid JSON`);
+    }
+
+    // Merge refined prompts back into strategy data
+    const refinedSecondary = peResult.secondaryImages || [];
+    const refinedAPlus = peResult.aPlusContent || [];
+
+    strategyData.secondaryImages = strategyData.secondaryImages?.map((img: any, idx: number) => {
+        const refined = refinedSecondary.find((r: any) => r.id === img.id) || refinedSecondary[idx];
+        return {
+            ...img,
+            visualPrompt: refined?.refinedPrompt || img.visualPrompt
+        };
+    }) || [];
+
+    strategyData.aPlusContent = strategyData.aPlusContent?.map((mod: any, idx: number) => {
+        const refined = refinedAPlus.find((r: any) => r.id === mod.id) || refinedAPlus[idx];
+        return {
+            ...mod,
+            visualPrompt: refined?.refinedPrompt || mod.visualPrompt
+        };
+    }) || [];
+
+    return strategyData;
 };
 
 // === 🔄 ModelScope 异步任务轮询辅助函数 (通过代理) ===
