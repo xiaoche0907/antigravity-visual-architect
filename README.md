@@ -1,58 +1,52 @@
 # 🚀 Amazon A9 Visual Architect (AntiGravity)
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg) ![React](https://img.shields.io/badge/React-18-blue) ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue) ![Vite](https://img.shields.io/badge/build-Vite-yellow)
+![License](https://img.shields.io/badge/license-MIT-blue.svg) ![React](https://img.shields.io/badge/React-18-blue) ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue) ![Version](https://img.shields.io/badge/version-7.1-green)
 
 > **专为亚马逊跨境电商打造的 AI 视觉与策略生成引擎。**
-> 
+>
 > **AI-Powered Visual Strategy & Content Generator for Amazon A9 Algorithm.**
 
 ## 📖 项目简介 (Introduction)
 
-**AntiGravity (反重力架构)** 是一个基于 AI 智能体协作的电商生产力工具。它模拟了亚马逊 A9 算法的"大脑"，通过 **三阶段智能体流水线** 将简单的产品关键词转化为高转化率的视觉营销方案。
+**AntiGravity (反重力架构)** 是一个基于 AI 智能体协作的电商生产力工具。它模拟了亚马逊 A9 算法的"大脑"，通过 **的双智能体 (Dual-Agent) 流水线** 将简单的产品关键词转化为高转化率的视觉营销方案。
 
-本项目已升级至 **v5.0 架构**，引入了 **视觉技术总监 (Prompt Engineer)** 角色，实现了从策略到提示词再到成图的完整 AI 协作流水线。
+本项目已升级至 **v7.1 架构 (Quantum Leap)**，实现了**中文策略分析 + 英文执行指令**的完美分工。
 
 ## ✨ 核心特性 (Key Features)
 
-### 🧠 三阶段 AI 智能体流水线 (v5.0 New!)
-- **首席策略官 (Strategy Director)**: 深度分析产品卖点 (USPs)、目标受众与竞品痛点，生成符合亚马逊 SEO 逻辑的营销策略与视觉简报。
-- **视觉技术总监 (Prompt Engineer)**: 将策略官的抽象简报翻译为精确的 Nanobanana Pro 专用提示词，专注于光学物理参数与构图技术。
-- **视觉执行官 (Visual Director)**: 接收技术总监的工程级 Prompt，生成高清商业图片。
+### 🧠 双智能体 JSON 流水线 (v7.1 New!)
 
-```
-用户输入 → 策略官分析 → 技术总监翻译 → 画师执行
-```
+我们重构了核心管线，确保"思考"与"执行"的分离：
 
-### 🔗 实时进度反馈 (v5.0 New!)
-- Toast 消息实时显示当前处理阶段：
-  - "🧠 策略大脑正在分析 A9 转化要素..."
-  - "🔗 视觉技术总监正在翻译为 Nanobanana 提示词..."
-  - "✅ 分析完成！"
+- **Agent A (Strategy Director)**:
+  - **职责**: 深度分析 Visual DNA (品牌调性、光影策略) 和 Listing 布局。
+  - **输出**: **强制中文 (CN)** 的策略理由 (`rationale`) 和视觉描述，确保用户秒懂。
+  - **格式**: Strict JSON Schema，杜绝废话。
+- **Agent B (Visual Director)**:
+  - **职责**: 将中文策略翻译为专业的 Midjourney/Stable Diffusion 提示词。
+  - **输出**: **强制英文 (EN)** 的执行指令 (`positive_prompt`)，包含 `[Layout]`, `[Lighting]` 等工程标签。
 
-### 📋 一键复制提示词 (v5.0 New!)
-- 副图生成和 A+ 详情页的每个提示词区域都配备了 **📋 复制** 按钮
-- 一键复制到剪贴板，方便在 Midjourney/DALL-E 等平台使用
+### 🎨 动态画幅控制 (Nanobanana Adaptive)
 
-### 🎮 手动生图与画质控制
-- **手动触发 (Manual Trigger)**: 策略分析完成后，点击任意图片占位符即可单独生成视觉图。
-- **一键批量生成 (Batch Generation)**: 支持按标签页（副图/A+）一键生成所有未完成的图片。
-- **画质选择器 (Resolution Selector)**:
-  - **1K (Standard)**: 快速生成，适合预览与调试。
-  - **2K/4K (HD/Ultra)**: 专为 Jiekou.ai 等高级接口设计，输出海报级超清素材。
+针对 **Grsai (Nanobanana)** 模型进行了底层优化：
+
+- **Listing 主图/副图**: 自动锁定 **3:4 竖向画幅 (896x1152)**，完美适配移动端浏览体验。
+- **A+ / 品牌故事**: 自动锁定 **21:9 / 16:9 超宽画幅 (1464x600)**，打造电影级视觉冲击力。
 
 ### 🎛️ 企业级模型资产管理
+
 - **多模型支持**:
-  - ✅ **OpenAI / Anthropic / Google Gemini**: 标准同步流支持。
-  - ✅ **DeepSeek R1/V3**: 深度推理模型支持。
-  - ✅ **智谱 AI (Zhipu)**: 国产大模型首选。
-  - ✅ **ModelScope (阿里魔搭)**: 异步任务轮询机制 (Async Polling)，完美集成 Z-Image。
-  - ✅ **Jiekou.ai**: 聚合接口支持，一站式接入 Midjourney, Flux, SDXL。
+  - ✅ **Grsai (Nanobanana)**: **v7.1 首选推荐**。支持极速出图与 Pro 级画质。
+  - ✅ **DeepSeek R1/V3**: 深度推理模型支持 (作为策略大脑)。
+  - ✅ **Jiekou.ai**: 聚合接口支持 (MJ/Flux)。
+  - ✅ **ModelScope / Aliyun**: 国内合规模型支持。
 - **严格连通性测试**: 杜绝"假成功"，通过真实发送探测包验证 API Key 与权限。
 
 ### 🖥️ 现代化工作台
+
 - **极简 UI**: 黑色深色模式，沉浸式体验。
-- **实时日志**: 可视化展示 AI 的思考路径与 API 交互细节。
-- **错误恢复**: 生图失败支持一键重试，错误信息直观展示。
+- **Visual DNA 面板**: 可视化展示品牌色 (Hex Swatches) 与光影策略。
+- **Code Block 预览**: 实时的 Agent B 提示词预览，支持一键复制。
 
 ## 🛠️ 技术栈 (Tech Stack)
 
@@ -65,12 +59,14 @@
 ## 🚀 快速开始 (Getting Started)
 
 ### 1. 克隆项目
+
 ```bash
 git clone https://github.com/xiaoche0907/antigravity-visual-architect.git
 cd antigravity-visual-architect
 ```
 
 ### 2. 安装依赖
+
 ```bash
 npm install
 # 或者
@@ -78,39 +74,33 @@ yarn install
 ```
 
 ### 3. 启动开发服务器
+
 ```bash
 npm run dev
 ```
+
 打开浏览器访问 `http://localhost:3000` 即可使用。
 
 ## ⚙️ 配置指南 (Configuration Guide)
 
 ### 第一步：添加模型资产
+
 1. 进入左侧 **"模型资产库"** 图标。
-2. 点击 **"添加模型"**。
-3. 选择预设：
-   - **文本模型**: 推荐使用 **DeepSeek-V3** (性价比之王) 或 **GPT-4o**。
-   - **图像模型**: 
-     - 追求极至画质推荐 **Jiekou.ai** (接入 MJ/Flux)。
-     - 追求速度推荐 **ModelScope** (Z-Image Turbo)。
-4. 填入 API Key 并点击 **[⚡ 测试连接]**。
+2. 添加 **Grsai** (用于生图) 和 **DeepSeek/OpenAI** (用于策略)。
+3. 填入 API Key 并点击 **[⚡ 测试连接]**。
 
-### 第二步：组建 AI 团队
-1. 进入 **"员工管理"** 界面。
-2. 为 **首席策略官** 指派一个强逻辑文本模型（如 GPT-4o, DeepSeek-V3）。
-3. 为 **视觉技术总监** 指派一个文本模型（推荐使用同一模型或专门的 Prompt 优化模型）。
-4. 为 **视觉执行官** 指派一个绘图模型（如 Jiekou.ai, ModelScope）。
+### 第二步：启动引擎
 
-### 第三步：启动引擎
 1. 回到 **工作台 (Workspace)**。
-2. 输入产品名称与卖点。
+2. 输入产品名称与卖点 (e.g., "Sony WH-1000XM5, Noise Cancelling").
 3. 点击 **[🚀 启动 A9 架构引擎]**。
-4. 观察 Toast 消息，确认两阶段 AI 分析完成。
-5. 使用 **"画质选择器"** 设定分辨率，点击 **"一键生成所有"**。
-6. 使用 **📋 复制** 按钮一键复制提示词到其他平台。
+4. 观察 Analysis Tab 中的 **中文策略分析**。
+5. 切换到 Visual Generation Tab，查看 **3:4 竖向** 的副图方案。
 
 ## 🤝 贡献 (Contributing)
-欢迎提交 Issue 和 Pull Request！如果您想添加新的模型厂商预设，请修改 `src/types/models.ts`。
+
+欢迎提交 Issue 和 Pull Request！
 
 ## 📄 开源协议 (License)
+
 MIT License.

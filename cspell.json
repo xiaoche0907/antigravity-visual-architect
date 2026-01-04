@@ -1,31 +1,13 @@
 {
-  "version": "0.2",
-  "words": [
-    "modelscope",
-    "grsai",
-    "dashscope",
-    "genai",
-    "Qwen",
-    "qwen",
-    "Jiekou",
-    "Nanobannan",
-    "SDXL",
-    "sdxl",
-    "importmap",
-    "DALL",
-    "dall",
-    "aplus",
-    "myagents",
-    "Aliyun",
-    "aliyun",
-    "Wanx",
-    "wanx",
-    "davinci",
-    "bailian",
-    "Volcengine",
-    "volcengine",
-    "Tongyi",
-    "Zhipu",
-    "Ollama"
-  ]
+    "words": [
+        "aplus",
+        "Behance",
+        "Gemini",
+        "Grsai",
+        "Jiekou",
+        "Knolling",
+        "modelscope",
+        "Nanobanana",
+        "Softbox"
+    ]
 }

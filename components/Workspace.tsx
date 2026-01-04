@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { WorkflowMode, RoleFocus, ProductInput, MarketingStrategy, AppConfig, HistorySession } from '../types';
 import { ModelConfig } from '../types/models';
 import { generateMarketingStrategy, generateVisual } from '../services/aiService';
+import { PROMPT_ENGINEER_SYSTEM_INSTRUCTION } from '../constants';
+import MarkdownRenderer from './MarkdownRenderer';
 
 interface WorkspaceProps {
     config: AppConfig;
@@ -140,7 +142,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
         try {
             // --- 4. 锁定【视觉技术总监】(Prompt Engineer Model) ---
             const promptEngineerConfig = modelConfigs.find(m => m.id === selectedPromptEngineerModelId);
-            const promptEngineerInstruction = localStorage.getItem('custom_prompt_engineer_instruction') || '';
+            const promptEngineerInstruction = localStorage.getItem('custom_prompt_engineer_instruction') || PROMPT_ENGINEER_SYSTEM_INSTRUCTION;
             console.log('🔗 [Workspace] 锁定视觉技术总监:', promptEngineerConfig ? `${promptEngineerConfig.name}` : '❌ 未选择 (将跳过)');
 
             // === Step 1: 策略大脑工作 (+ 可选的 Prompt Engineer) ===
@@ -196,12 +198,12 @@ const Workspace: React.FC<WorkspaceProps> = ({
     };
 
     // === 手动触发：单张生图 ===
-    const handleGenerateSingleImage = async (type: 'secondary' | 'aplus', index: number) => {
+    // Helper function to handle single image generation logic
+    const onGenerateSingle = async (type: 'secondary' | 'aplus', index: number, aspectRatio: '1:1' | '3:4' | '16:9') => {
         if (!strategy) return;
 
-        // 验证图像模型配置
         const visualConfig = modelConfigs.find(m => m.id === selectedVisualModelId);
-        const textConfig = modelConfigs.find(m => m.id === selectedBrainModelId); // For prompt summarization
+        const textConfig = modelConfigs.find(m => m.id === selectedBrainModelId);
         if (!config.mockMode && (!visualConfig || !visualConfig.isEnabled)) {
             alert("⚠️ 图像模型未配置或已禁用，请检查设置。");
             return;
@@ -209,7 +211,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
 
         const updated = { ...strategy };
 
-        // 设置加载状态
+        // Set PENDING state
         if (type === 'secondary') {
             const item = updated.secondaryImages[index];
             if (!item) return;
@@ -222,38 +224,29 @@ const Workspace: React.FC<WorkspaceProps> = ({
         setStrategy({ ...updated });
 
         try {
-            console.log(`🎨 [Manual] Generating ${type} image #${index + 1} with ${imageResolution}...`);
-
             let prompt = '';
-            let aspectRatio = '';
 
-            // 准备 Prompt & 参数 (Split logic to avoid union type errors)
             if (type === 'secondary') {
                 const item = updated.secondaryImages[index];
                 prompt = item.visualPrompt;
                 if (!prompt || prompt.length < 5) {
                     prompt = `Professional commercial photography of ${input.usps}, ${item.description}, 8k resolution`;
                 }
-                aspectRatio = '1:1';
             } else {
                 const item = updated.aPlusContent[index];
                 prompt = item.visualPrompt;
                 if (!prompt || prompt.length < 5) {
                     prompt = item.visualGuidance || `High quality product image for Amazon A+ content, ${item.moduleType}, ${input.usps}`;
                 }
-                aspectRatio = '16:9';
             }
 
-            // 调用 API - 传入产品图作为参考图 (for image editing models)
-            const url = await generateVisual(prompt, visualConfig || null, config, aspectRatio as any, imageResolution, input.productImages, textConfig);
+            const url = await generateVisual(prompt, visualConfig || null, config, aspectRatio, imageResolution, input.productImages, textConfig);
 
-            // 更新结果
             if (type === 'secondary') {
                 updated.secondaryImages[index].generatedImageUrl = url;
             } else {
                 updated.aPlusContent[index].generatedImageUrl = url;
             }
-
             setStrategy({ ...updated });
             console.log(`✅ [Manual] Image #${index + 1} generated.`);
 
@@ -269,13 +262,23 @@ const Workspace: React.FC<WorkspaceProps> = ({
         }
     };
 
+    // === 手动触发：单张生图 ===
+    const handleGenerateSingleImage = async (type: 'secondary' | 'aplus', index: number) => {
+        if (!strategy) return;
+        if (type === 'secondary') {
+            await onGenerateSingle('secondary', index, '3:4'); // 🚀 Default to 3:4 for Listings
+        } else {
+            await onGenerateSingle('aplus', index, '16:9');
+        }
+    };
+
     // === 手动触发：批量生图 (生成当前 Tab 下所有未完成的) ===
     const handleGenerateBatch = async (type: 'secondary' | 'aplus') => {
         if (!strategy) return;
 
         // 验证图像模型配置
         const visualConfig = modelConfigs.find(m => m.id === selectedVisualModelId);
-        const textConfig = modelConfigs.find(m => m.id === selectedBrainModelId); // For prompt summarization
+        const textConfig = modelConfigs.find(m => m.id === selectedBrainModelId);
         if (!config.mockMode && (!visualConfig || !visualConfig.isEnabled)) {
             alert("⚠️ 图像模型未配置或已禁用，请检查设置。");
             return;
@@ -288,7 +291,6 @@ const Workspace: React.FC<WorkspaceProps> = ({
         const list = type === 'secondary' ? updated.secondaryImages : updated.aPlusContent;
 
         list.forEach((item, idx) => {
-            // Common property access safe here or just checks emptiness
             if (!item.generatedImageUrl || item.generatedImageUrl.startsWith('ERROR:')) {
                 indicesToGenerate.push(idx);
             }
@@ -302,15 +304,11 @@ const Workspace: React.FC<WorkspaceProps> = ({
         showToast(`🚀 开始批量生成 ${indicesToGenerate.length} 张图片 (${imageResolution})...`);
 
         // 🚀 Concurrency Control Queue
-        const CONCURRENCY_LIMIT = 2; // Max 2 parallel requests to prevent browser stall
-        let activeWorkers = 0;
+        const CONCURRENCY_LIMIT = 2;
         let queueIndex = 0;
 
         const processQueue = async () => {
-            // If queue finished
             if (queueIndex >= indicesToGenerate.length) return;
-
-            // Get next task index
             const currentIndex = indicesToGenerate[queueIndex++];
 
             // Update UI to 'Generating...'
@@ -319,11 +317,11 @@ const Workspace: React.FC<WorkspaceProps> = ({
             } else {
                 updated.aPlusContent[currentIndex].generatedImageUrl = "PENDING:正在绘制... (勿刷新)";
             }
-            setStrategy({ ...updated }); // Force update UI
+            setStrategy({ ...updated }); 
 
             try {
                 let prompt = '';
-                let aspectRatio = '';
+                let aspectRatio: '1:1' | '3:4' | '16:9' = '1:1';
 
                 if (type === 'secondary') {
                     const item = updated.secondaryImages[currentIndex];
@@ -331,7 +329,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
                     if (!prompt || prompt.length < 5) {
                         prompt = `Professional commercial photography of ${input.usps}, ${item.description}, 8k resolution`;
                     }
-                    aspectRatio = '1:1';
+                    aspectRatio = '3:4'; // 🚀 Default to 3:4
                 } else {
                     const item = updated.aPlusContent[currentIndex];
                     prompt = item.visualPrompt;
@@ -341,10 +339,8 @@ const Workspace: React.FC<WorkspaceProps> = ({
                     aspectRatio = '16:9';
                 }
 
-                // Call API
-                const url = await generateVisual(prompt, visualConfig || null, config, aspectRatio as any, imageResolution, input.productImages, textConfig);
+                const url = await generateVisual(prompt, visualConfig || null, config, aspectRatio, imageResolution, input.productImages, textConfig);
 
-                // Update Success
                 if (type === 'secondary') {
                     updated.secondaryImages[currentIndex].generatedImageUrl = url;
                 } else {
@@ -354,20 +350,17 @@ const Workspace: React.FC<WorkspaceProps> = ({
             } catch (error: any) {
                 console.error(`❌ Batch error at #${currentIndex}:`, error);
                 const errMsg = `ERROR:${error.message}`;
-                // Update Error
                 if (type === 'secondary') {
                     updated.secondaryImages[currentIndex].generatedImageUrl = errMsg;
                 } else {
                     updated.aPlusContent[currentIndex].generatedImageUrl = errMsg;
                 }
             } finally {
-                // Update State and Trigger Next
                 setStrategy({ ...updated });
                 await processQueue();
             }
         };
 
-        // Start initial workers
         const workers: Promise<void>[] = [];
         for (let i = 0; i < Math.min(CONCURRENCY_LIMIT, indicesToGenerate.length); i++) {
             workers.push(processQueue());
@@ -574,16 +567,114 @@ const Workspace: React.FC<WorkspaceProps> = ({
 
                             {activeTab === 'analysis' && (
                                 <div className="space-y-8">
-                                    <div className="bg-[#1e1f20] p-10 rounded-3xl border border-[#3c4043] shadow-2xl">
-                                        <h3 className="text-[#A8C7FA] font-bold text-lg mb-6 uppercase tracking-widest flex items-center">
-                                            <span className="text-2xl mr-3">🧠</span> 市场洞察与视觉策略
-                                        </h3>
-                                        <div className="prose prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap mono bg-[#131314] p-8 rounded-2xl border border-[#3c4043] text-gray-300">
-                                            {typeof strategy.analysis === 'string' ? strategy.analysis : JSON.stringify(strategy.analysis)}
-                                        </div>
-                                    </div>
+                                    {strategy.visualStrategy ? (
+                                        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                            {/* 🧬 V7.0 Visual DNA Card */}
+                                            <div className="bg-gradient-to-br from-[#1e1f20] via-[#252a31] to-[#1e1f20] p-8 md:p-10 rounded-3xl border border-[#A8C7FA]/20 shadow-2xl relative overflow-hidden group">
+                                                {/* Background Decoration */}
+                                                <div className="absolute -top-20 -right-20 w-64 h-64 bg-[#A8C7FA]/5 rounded-full blur-3xl group-hover:bg-[#A8C7FA]/10 transition-all duration-1000"></div>
+                                                
+                                                <div className="relative z-10">
+                                                    <div className="flex items-center gap-4 mb-8">
+                                                        <div className="w-12 h-12 bg-[#A8C7FA]/10 rounded-xl flex items-center justify-center border border-[#A8C7FA]/30">
+                                                            <span className="text-2xl">🧬</span>
+                                                        </div>
+                                                        <div>
+                                                            <h3 className="text-[#A8C7FA] font-bold text-2xl tracking-wide">VISUAL DNA ANALYSIS</h3>
+                                                            <p className="text-xs text-gray-500 uppercase tracking-widest font-mono mt-1">Agent A: Strategy Director Output</p>
+                                                        </div>
+                                                    </div>
 
-                                    {/* 👇 找回丢失的副图模块：在 Analysis 底部增加预览引导，或直接渲染 */}
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                                                        {/* Brand Tone & Lighting */}
+                                                        <div className="space-y-8">
+                                                            <div>
+                                                                <h4 className="text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-3 font-bold flex items-center gap-2">
+                                                                    <span className="w-1 h-1 bg-[#A8C7FA] rounded-full"></span> Brand Tone
+                                                                </h4>
+                                                                <p className="text-xl md:text-2xl text-white font-serif italic leading-relaxed">
+                                                                    "{strategy.visualStrategy.visual_dna_analysis.brand_tone}"
+                                                                </p>
+                                                            </div>
+
+                                                            <div>
+                                                                <h4 className="text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-3 font-bold flex items-center gap-2">
+                                                                    <span className="w-1 h-1 bg-[#A8C7FA] rounded-full"></span> Lighting Strategy
+                                                                </h4>
+                                                                <p className="text-sm text-gray-300 leading-relaxed border-l-2 border-[#3c4043] pl-4">
+                                                                    {strategy.visualStrategy.visual_dna_analysis.lighting_strategy}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Palette & Strategy */}
+                                                        <div className="space-y-8">
+                                                            <div>
+                                                                <h4 className="text-[10px] uppercase tracking-[0.2em] text-gray-500 mb-4 font-bold flex items-center gap-2">
+                                                                    <span className="w-1 h-1 bg-[#A8C7FA] rounded-full"></span> Color Palette
+                                                                </h4>
+                                                                <div className="flex flex-wrap gap-4">
+                                                                    {/* Render Swatches */}
+                                                                    {(() => {
+                                                                        const rawPalette = strategy.visualStrategy.visual_dna_analysis.color_palette || 
+                                                                                         (strategy.visualStrategy.visual_dna_analysis as any).color_palette_hex || "";
+                                                                        const hexCodes = rawPalette.match(/#[0-9A-Fa-f]{6}/g) || [];
+                                                                        return hexCodes.length > 0 ? hexCodes.map((color, i) => (
+                                                                            <div key={i} className="group relative">
+                                                                                <div 
+                                                                                    className="w-14 h-14 rounded-2xl shadow-lg border border-white/10 ring-2 ring-transparent group-hover:ring-[#A8C7FA] transition-all cursor-pointer transform group-hover:scale-110"
+                                                                                    style={{backgroundColor: color}}
+                                                                                    title={color}
+                                                                                    onClick={() => copyToClipboard(color)}
+                                                                                />
+                                                                                <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[9px] font-mono text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-black/80 px-1 rounded">
+                                                                                    {color}
+                                                                                </span>
+                                                                            </div>
+                                                                        )) : (
+                                                                           <p className="text-sm text-gray-400">{rawPalette}</p>
+                                                                        );
+                                                                    })()}
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="bg-black/30 p-6 rounded-2xl border border-white/5 relative overflow-hidden">
+                                                                <h4 className="text-[10px] uppercase tracking-[0.2em] text-[#A8C7FA] mb-2 font-bold flex items-center gap-2">
+                                                                    💡 Lighting Strategy
+                                                                </h4>
+                                                                <p className="text-gray-300 text-sm italic">
+                                                                    "{strategy.visualStrategy.visual_dna_analysis.lighting_strategy}"
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Additional Raw Analysis (Optional/Collapsed) */}
+                                            <details className="group bg-[#1e1f20] border border-[#3c4043] rounded-2xl overflow-hidden">
+                                                <summary className="p-4 cursor-pointer flex items-center justify-between hover:bg-[#252a31] transition-colors">
+                                                    <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Show Full Text Analysis</span>
+                                                    <span className="text-gray-500 group-open:rotate-180 transition-transform">▼</span>
+                                                </summary>
+                                                <div className="p-8 pt-0 border-t border-[#3c4043] bg-[#131314]">
+                                                    <MarkdownRenderer content={strategy.analysis} />
+                                                </div>
+                                            </details>
+                                        </div>
+                                    ) : (
+                                        // 👴 Legacy View (Fallback)
+                                        <div className="bg-[#1e1f20] p-10 rounded-3xl border border-[#3c4043] shadow-2xl">
+                                            <h3 className="text-[#A8C7FA] font-bold text-lg mb-6 uppercase tracking-widest flex items-center">
+                                                <span className="text-2xl mr-3">🧠</span> 市场洞察与视觉策略 (Legacy)
+                                            </h3>
+                                            <div className="prose prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap mono bg-[#131314] p-8 rounded-2xl border border-[#3c4043] text-gray-300">
+                                                {typeof strategy.analysis === 'string' ? <MarkdownRenderer content={strategy.analysis} /> : JSON.stringify(strategy.analysis)}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Secondary Images Preview */}
                                     {strategy.secondaryImages && strategy.secondaryImages.length > 0 && (
                                         <div className="bg-[#1e1f20] p-8 rounded-3xl border border-[#3c4043]">
                                             <div className="flex justify-between items-center mb-6">
@@ -597,19 +688,23 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                             <div className="grid grid-cols-5 gap-4 opacity-70 hover:opacity-100 transition-opacity">
                                                 {strategy.secondaryImages.map((img, i) => {
                                                     if (!img) return null;
-                                                    <div key={i} className="aspect-square bg-black rounded-lg border border-[#3c4043] flex items-center justify-center relative group" title={String(img.type || '')}>
-                                                        {img.generatedImageUrl ? (
-                                                            img.generatedImageUrl.startsWith('ERROR:') ? (
-                                                                <div className="w-full h-full flex items-center justify-center bg-red-900/20 text-[10px] text-red-400 p-1 text-center leading-tight overflow-hidden" title={img.generatedImageUrl}>
-                                                                    ⚠️ 生成失败
-                                                                </div>
+                                                    return (
+                                                        <div key={i} className="aspect-square bg-black rounded-lg border border-[#3c4043] flex items-center justify-center relative group overflow-hidden" title={String(img.type || '')}>
+                                                            {img.generatedImageUrl ? (
+                                                                img.generatedImageUrl.startsWith('ERROR:') ? (
+                                                                    <div className="w-full h-full flex items-center justify-center bg-red-900/20 text-[10px] text-red-400 p-1 text-center leading-tight overflow-hidden" title={img.generatedImageUrl}>
+                                                                        ⚠️
+                                                                    </div>
+                                                                ) : img.generatedImageUrl.startsWith('PENDING') ? (
+                                                                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#A8C7FA]"></div>
+                                                                ) : (
+                                                                    <img src={img.generatedImageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-110" alt={`Review ${i}`} />
+                                                                )
                                                             ) : (
-                                                                <img src={img.generatedImageUrl} className="w-full h-full object-cover rounded-lg" />
-                                                            )
-                                                        ) : (
-                                                            <span className="text-[10px] text-gray-600 text-center px-1">{String(img.type || 'Image')}</span>
-                                                        )}
-                                                    </div>
+                                                                <span className="text-[10px] text-gray-600 text-center px-1 font-mono">{String(i + 1)}</span>
+                                                            )}
+                                                        </div>
+                                                    );
                                                 })}
                                             </div>
                                         </div>
@@ -715,18 +810,30 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                     <span className="text-xl">🎨</span>
                                                                 </div>
                                                                 <p className="text-xs text-gray-400 group-hover/btn:text-[#A8C7FA] font-bold">点击生成视觉</p>
-                                                                <p className="text-[10px] text-gray-600 mt-1">1:1 Square • {imageResolution}</p>
+                                                                <p className="text-[10px] text-gray-600 mt-1">3:4 Vertical • {imageResolution.split('x').reverse().join('x')}</p>
                                                             </button>
                                                         )}
                                                     </div>
                                                     {/* Meta Info */}
                                                     <div className="p-6 flex-1 flex flex-col space-y-4">
+                                                        {/* 🎯 Strategy Rationale (V7.0) */}
+                                                        {strategy.visualStrategy?.listing_image_plan?.find(p => p.index === img.id) && (
+                                                            <div className="mb-2 bg-[#A8C7FA]/5 p-3 rounded-lg border border-[#A8C7FA]/20">
+                                                                <span className="text-[9px] text-[#A8C7FA] uppercase font-bold block mb-1 flex items-center gap-1">
+                                                                    <span>🎯</span> Strategy Rationale
+                                                                </span>
+                                                                <p className="text-xs text-gray-200 leading-snug">
+                                                                    {strategy.visualStrategy.listing_image_plan.find(p => p.index === img.id)?.strategy_rationale}
+                                                                </p>
+                                                            </div>
+                                                        )}
+
                                                         <div>
-                                                            <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">画面描述</span>
+                                                            <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Visual Execution (CN)</span>
                                                             <p className="text-xs text-gray-300 leading-relaxed">{String(img.description || '无描述')}</p>
                                                         </div>
                                                         <div>
-                                                            <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">营销文案 (Copy)</span>
+                                                            <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">English Copy</span>
                                                             <p className="text-xs text-white bg-[#131314] p-3 rounded-lg border border-[#3c4043] font-serif italic">"{String(img.copywriting || '...')}"</p>
                                                         </div>
                                                         <div className="mt-auto pt-4 border-t border-[#3c4043]">
@@ -794,8 +901,8 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                     <div className="grid grid-cols-1 gap-8">
                                         {strategy.aPlusContent && strategy.aPlusContent.length > 0 ? strategy.aPlusContent.map((m, i) => {
                                             if (!m) return null; // Safety check
-                                            const isPending = m.generatedImageUrl?.startsWith('PENDING:');
-                                            const isError = m.generatedImageUrl?.startsWith('ERROR:');
+                                            const isPending = m.generatedImageUrl?.startsWith('PENDING:') || false;
+                                            const isError = m.generatedImageUrl?.startsWith('ERROR:') || false;
                                             const hasImage = m.generatedImageUrl && !isPending && !isError;
 
                                             return (
@@ -862,8 +969,20 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                     </div>
                                                     {/* Meta Info */}
                                                     <div className="p-6 flex-1 flex flex-col space-y-4">
+                                                        {/* 📖 Narrative Goal (V7.0) */}
+                                                        {strategy.visualStrategy?.premium_aplus_plan?.find(p => p.module_index === m.id) && (
+                                                            <div className="mb-2 bg-[#A8C7FA]/5 p-3 rounded-lg border border-[#A8C7FA]/20">
+                                                                <span className="text-[9px] text-[#A8C7FA] uppercase font-bold block mb-1 flex items-center gap-1">
+                                                                    <span>📖</span> Narrative Goal
+                                                                </span>
+                                                                <p className="text-xs text-gray-200 leading-snug">
+                                                                    {strategy.visualStrategy.premium_aplus_plan.find(p => p.module_index === m.id)?.narrative_goal}
+                                                                </p>
+                                                            </div>
+                                                        )}
+
                                                         <div>
-                                                            <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">模块内容</span>
+                                                            <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Visual Content</span>
                                                             <p className="text-sm text-gray-300 leading-relaxed">{String(m.content || '无内容')}</p>
                                                         </div>
                                                         <div>
