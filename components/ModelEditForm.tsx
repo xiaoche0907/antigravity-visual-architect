@@ -391,6 +391,13 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
 
             // === Zhipu AI (智谱) ===
             else if (formData.provider === 'zhipu') {
+                // 🛡️ Get recommended models first (includes vision models like glm-4.6v-flash)
+                const recommended = formData.category === 'text'
+                    ? RECOMMENDED_TEXT_MODELS.zhipu
+                    : formData.category === 'image'
+                        ? RECOMMENDED_IMAGE_MODELS.zhipu
+                        : RECOMMENDED_MULTIMODAL_MODELS.zhipu;
+
                 try {
                     let endpoint = formData.baseUrl;
                     // Ensure ends with /models
@@ -413,20 +420,15 @@ const ModelEditForm: React.FC<ModelEditFormProps> = ({
                     const data = await response.json();
 
                     // Zhipu response format check
-                    models = (data.data || []).map((m: any) => m.id);
+                    const apiModels = (data.data || []).map((m: any) => m.id);
 
-                    // If empty, throw to trigger fallback
-                    if (!models || models.length === 0) {
-                        throw new Error('未找到模型');
-                    }
+                    // 🛡️ CRITICAL: Merge recommended models (including vision) with API response
+                    // Recommended models come FIRST to ensure visibility
+                    models = Array.from(new Set([...recommended, ...apiModels]));
 
                 } catch (error) {
                     console.warn('智谱模型列表获取失败，使用推荐列表', error);
-                    models = formData.category === 'text'
-                        ? RECOMMENDED_TEXT_MODELS.zhipu
-                        : formData.category === 'image'
-                            ? RECOMMENDED_IMAGE_MODELS.zhipu
-                            : RECOMMENDED_MULTIMODAL_MODELS.zhipu;
+                    models = recommended;
                 }
             }
 

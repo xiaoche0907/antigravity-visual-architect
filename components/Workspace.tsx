@@ -86,6 +86,73 @@ const Workspace: React.FC<WorkspaceProps> = ({
         }
     };
 
+    // ============================================================
+    // 🛡️ UNIVERSAL ADAPTERS - Make UI robust against field name changes
+    // ============================================================
+
+    /**
+     * Extract the Chinese strategy/analysis text from an item, regardless of field name.
+     * This function checks multiple candidate keys to handle different prompt versions.
+     */
+    const getStrategyText = (item: any): string => {
+        if (!item) return "No data";
+
+        // Priority list of keys to check (from v1.0 to v13.0+)
+        const candidates = [
+            item.visual_execution,       // v7.0
+            item.composition_guide,      // Newer versions
+            item.design_concept,         // Alternative
+            item.design_layout_instruction,
+            item.visual_description,     // Generic
+            item.description,            // Legacy field
+            item.strategy_rationale_cn,  // Fallback CN
+            item.strategy_rationale,     // English fallback
+            item.content                 // Last resort
+        ];
+
+        // Return the first one that exists and has content
+        const found = candidates.find(text => text && typeof text === 'string' && text.length > 0);
+        return found || "No analysis found (Key mismatch - check prompt version)";
+    };
+
+    /**
+     * Extract the English prompt text from an execution task item.
+     * This function checks multiple candidate keys for the image generation prompt.
+     */
+    const getPromptText = (item: any): string => {
+        if (!item) return "No prompt data";
+
+        // Priority list of prompt keys
+        const candidates = [
+            item.positive_prompt,        // Standard v7.0
+            item.prompt,                 // Generic
+            item.image_prompt,           // Alternative
+            item.generation_prompt,
+            item.mj_prompt,              // Midjourney style
+            item.visual_prompt,          // Legacy
+            item.visualPrompt            // Camel case variant
+        ];
+
+        const found = candidates.find(text => text && typeof text === 'string' && text.length > 0);
+        return found || "Generating...";
+    };
+
+    /**
+     * Find a matching execution task from Agent B output.
+     * Handles different index field names.
+     */
+    const findMatchingExecutionTask = (executionTasks: any[], itemId: any, type: 'listing' | 'aplus'): any => {
+        if (!executionTasks || !Array.isArray(executionTasks)) return null;
+
+        // Try different index field names
+        return executionTasks.find((t: any) => {
+            if (type === 'listing') {
+                return t.index === itemId || t.id === itemId || t.listing_index === itemId;
+            } else {
+                return t.module === itemId || t.module_index === itemId || t.id === itemId;
+            }
+        });
+    };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: 'productImages' | 'styleReferences') => {
         const files = Array.from(e.target.files || []) as File[];
@@ -593,7 +660,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                     <span className="w-1 h-1 bg-[#A8C7FA] rounded-full"></span> Brand Tone
                                                                 </h4>
                                                                 <p className="text-xl md:text-2xl text-white font-serif italic leading-relaxed">
-                                                                    "{strategy.visualStrategy.visual_dna_analysis.brand_tone}"
+                                                                    "{(strategy?.visualStrategy?.visual_dna_analysis as any)?.brand_tone || (strategy?.visualStrategy?.visual_dna_analysis as any)?.tone || '分析中...'}"
                                                                 </p>
                                                             </div>
 
@@ -602,7 +669,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                     <span className="w-1 h-1 bg-[#A8C7FA] rounded-full"></span> Lighting Strategy
                                                                 </h4>
                                                                 <p className="text-sm text-gray-300 leading-relaxed border-l-2 border-[#3c4043] pl-4">
-                                                                    {strategy.visualStrategy.visual_dna_analysis.lighting_strategy}
+                                                                    {(strategy?.visualStrategy?.visual_dna_analysis as any)?.lighting_strategy || (strategy?.visualStrategy?.visual_dna_analysis as any)?.lighting || '分析中...'}
                                                                 </p>
                                                             </div>
                                                         </div>
@@ -830,7 +897,8 @@ const Workspace: React.FC<WorkspaceProps> = ({
 
                                                         <div>
                                                             <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Visual Execution (CN)</span>
-                                                            <p className="text-xs text-gray-300 leading-relaxed">{String(img.description || '无描述')}</p>
+                                                            {/* 🛡️ Using universal adapter for robustness */}
+                                                            <p className="text-xs text-gray-300 leading-relaxed">{getStrategyText(img)}</p>
                                                         </div>
                                                         <div>
                                                             <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">English Copy</span>
@@ -842,10 +910,14 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                     <span className="group-open:rotate-90 transition-transform">▶</span> Show MJ Prompt
                                                                 </summary>
                                                                 <div className="mt-2 relative">
-                                                                    {/* 🚨 FIX: Read from Agent B's execution prompts, NOT Agent A's visual_execution */}
+                                                                    {/* 🛡️ Using universal adapters for robustness */}
                                                                     {(() => {
-                                                                        const matchingTask = strategy.executionPrompts?.listing_generation_tasks?.find((t: any) => t.index === img.id);
-                                                                        const promptToShow = matchingTask?.positive_prompt || (strategy.executionPrompts ? 'No prompt generated' : 'Generating...');
+                                                                        const matchingTask = findMatchingExecutionTask(
+                                                                            strategy.executionPrompts?.listing_generation_tasks,
+                                                                            img.id,
+                                                                            'listing'
+                                                                        );
+                                                                        const promptToShow = getPromptText(matchingTask);
                                                                         return (
                                                                             <>
                                                                                 <p className="text-[10px] font-mono text-gray-500 bg-black p-2 pr-16 rounded selectable">{promptToShow}</p>
@@ -992,7 +1064,8 @@ const Workspace: React.FC<WorkspaceProps> = ({
 
                                                         <div>
                                                             <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Visual Content</span>
-                                                            <p className="text-sm text-gray-300 leading-relaxed">{String(m.content || '无内容')}</p>
+                                                            {/* 🛡️ Using universal adapter for robustness */}
+                                                            <p className="text-sm text-gray-300 leading-relaxed">{getStrategyText(m)}</p>
                                                         </div>
                                                         <div>
                                                             <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">视觉指导 (Visual Guidance)</span>
@@ -1004,10 +1077,14 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                     <span className="group-open:rotate-90 transition-transform">▶</span> Show Image Prompt
                                                                 </summary>
                                                                 <div className="mt-2 relative">
-                                                                    {/* 🚨 FIX: Read from Agent B's execution prompts for A+ content */}
+                                                                    {/* 🛡️ Using universal adapters for robustness */}
                                                                     {(() => {
-                                                                        const matchingTask = strategy.executionPrompts?.aplus_generation_tasks?.find((t: any) => t.module === m.id);
-                                                                        const promptToShow = matchingTask?.positive_prompt || (strategy.executionPrompts ? 'No prompt generated' : 'Generating...');
+                                                                        const matchingTask = findMatchingExecutionTask(
+                                                                            strategy.executionPrompts?.aplus_generation_tasks,
+                                                                            m.id,
+                                                                            'aplus'
+                                                                        );
+                                                                        const promptToShow = getPromptText(matchingTask);
                                                                         return (
                                                                             <>
                                                                                 <p className="text-[10px] font-mono text-gray-500 bg-black p-2 pr-16 rounded selectable">{promptToShow}</p>

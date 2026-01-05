@@ -89,7 +89,12 @@ export const RECOMMENDED_MULTIMODAL_MODELS: Record<ProviderType, string[]> = {
     jiekou: [],
     grsai: [],
     custom: [],
-    zhipu: ['glm-4v', 'glm-4v-plus']
+    zhipu: [
+        'glm-4.6v-flash',    // 🆕 免费视觉模型，128K上下文，支持图片/视频/文件理解
+        'glm-4.6v',          // 付费版本，106B参数
+        'glm-4v',            // 旧版视觉模型
+        'glm-4v-plus'        // 旧版视觉模型增强版
+    ]
 };
 
 /**
@@ -105,7 +110,14 @@ export const RECOMMENDED_TEXT_MODELS: Record<ProviderType, string[]> = {
     jiekou: [],
     grsai: ['gemini-3-pro', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
     custom: [],
-    zhipu: ['glm-4-plus', 'glm-4-0520', 'glm-4-air', 'glm-4-flash', 'glm-4-long']
+    zhipu: [
+        'glm-4.6v-flash',  // 🆕 免费视觉模型，支持图片/视频/文件理解
+        'glm-4-plus',
+        'glm-4-0520',
+        'glm-4-air',
+        'glm-4-flash',
+        'glm-4-long'
+    ]
 };
 
 /**

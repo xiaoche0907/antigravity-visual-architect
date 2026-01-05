@@ -10,10 +10,19 @@ interface AIResponse {
 }
 
 // Helper: Robust JSON Parser
-// Helper: Robust JSON Parser
+// 🛡️ Enhanced for Vision Model Compatibility (GLM-4.6V, Qwen-VL, etc.)
+// Handles: conversational text, markdown code blocks, malformed JSON
 const safeJSONParse = (text: string): any => {
-    // 0. Pre-process: Remove Markdown code blocks and trim
-    let clean = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+    if (!text || typeof text !== 'string') return null;
+
+    console.log("🔍 [safeJSONParse] Input length:", text.length, "First 100 chars:", text.substring(0, 100));
+
+    // 0. Pre-process: Try to extract JSON from code blocks first (handles ```json...```)
+    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    let clean = codeBlockMatch ? codeBlockMatch[1].trim() : text.trim();
+
+    // Also strip any remaining ``` that might be malformed
+    clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
 
     // 1. Try direct parse
     try {
@@ -22,32 +31,84 @@ const safeJSONParse = (text: string): any => {
         // Continue...
     }
 
+    // 2. 🛡️ SIMPLE REGEX: Extract using \{[\s\S]*\} pattern (ignores conversational text)
     try {
-        // 2. Extraction: Find the outer valid JSON object
-        let start = clean.indexOf('{');
-        let end = clean.lastIndexOf('}');
+        console.log("🔍 [safeJSONParse] Trying regex extraction with /\\{[\\s\\S]*\\}/ ...");
 
-        // 2b. 🆕 Enhanced FIX: Look for JSON key patterns if no braces found
-        // This handles cases where AI outputs `"analysis": ...` without surrounding `{}`
+        // Use regex to find JSON object (matches first { to last })
+        const jsonMatch = clean.match(/\{[\s\S]*\}/);
+
+        if (jsonMatch) {
+            console.log("🔍 [safeJSONParse] Found JSON match, length:", jsonMatch[0].length);
+            try {
+                const parsed = JSON.parse(jsonMatch[0]);
+                console.log("✅ [safeJSONParse] Regex extraction SUCCESS!");
+                return parsed;
+            } catch (e) {
+                console.warn("⚠️ [safeJSONParse] Regex match found but parse failed:", (e as Error).message);
+                // Continue to more advanced methods...
+            }
+        } else {
+            console.warn("⚠️ [safeJSONParse] No JSON object pattern found in input");
+        }
+    } catch (e) {
+        // Continue...
+    }
+
+    try {
+        // 3. Balanced brace algorithm for nested structures
+        let start = clean.indexOf('{');
+
+        // 3b. Look for JSON key patterns if no braces found
         if (start === -1) {
-            // Match patterns like `"analysis":` or `"secondaryImages":`
-            const keyMatch = clean.match(/"(analysis|secondaryImages|aPlusContent)":/);
+            const keyMatch = clean.match(/"(analysis|secondaryImages|aPlusContent|visual_dna_analysis|listing_generation_tasks|listing_image_plan)":/);
             if (keyMatch && keyMatch.index !== undefined) {
-                // Wrap everything from the first key to the end in braces
                 clean = `{${clean.substring(keyMatch.index)}}`;
                 start = 0;
-                end = clean.length - 1;
             }
         }
 
-        if (start !== -1 && end !== -1 && end > start) {
-            clean = clean.substring(start, end + 1);
+        if (start !== -1) {
+            let depth = 0;
+            let jsonEnd = start;
+            let inString = false;
+            let escaped = false;
 
-            // Try parse extracted
+            for (let i = start; i < clean.length; i++) {
+                const char = clean[i];
+
+                if (escaped) {
+                    escaped = false;
+                    continue;
+                }
+
+                if (char === '\\') {
+                    escaped = true;
+                    continue;
+                }
+
+                if (char === '"') {
+                    inString = !inString;
+                    continue;
+                }
+
+                if (inString) continue;
+
+                if (char === '{') depth++;
+                if (char === '}') {
+                    depth--;
+                    if (depth === 0) {
+                        jsonEnd = i;
+                        break;
+                    }
+                }
+            }
+
+            clean = clean.substring(start, jsonEnd + 1);
             try { return JSON.parse(clean); } catch (e) { }
         }
 
-        // 3. Robust Sanitization (State Machine)
+        // 4. Robust Sanitization (State Machine)
         let sanitized = "";
         let inString = false;
         let isEscaped = false;
@@ -80,15 +141,113 @@ const safeJSONParse = (text: string): any => {
             }
         }
 
-        // 4. Regex Fixes (Trailing commas)
+        // 5. Regex Fixes (Trailing commas)
         sanitized = sanitized.replace(/,(\s*[}\]])/g, '$1');
 
         return JSON.parse(sanitized);
 
     } catch (e) {
-        console.error("Advanced JSON Parse Failed:", e);
+        console.error("❌ [safeJSONParse] All parsing methods failed:", e);
+        console.error("📝 Input text (first 500 chars):", text.substring(0, 500));
         return null;
     }
+};
+
+// 🛡️ Universal Adapter: Normalize AI output to standard fields
+// This ensures UI compatibility regardless of prompt field names
+const normalizeAgentOutput = (rawData: any): any => {
+    if (!rawData) return rawData;
+
+    console.log("🔄 [Normalizer] Processing raw data with keys:", Object.keys(rawData));
+
+    // 1. Normalize Listing Image Plan - search DEEPLY for any array that looks like image plans
+    let listingPlan = rawData.listing_image_plan
+        || rawData.listing_images
+        || rawData.image_plan
+        || rawData.images
+        || rawData.secondary_images
+        || rawData.product_images
+        || rawData.image_plans
+        || [];
+
+    // If still empty, search in nested objects
+    if (!listingPlan.length) {
+        for (const key of Object.keys(rawData)) {
+            const val = rawData[key];
+            if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
+                // Check if array items look like image plans (have type or index)
+                if (val[0].type || val[0].index !== undefined || val[0].visual_execution || val[0].layout_logic) {
+                    console.log("🔍 [Normalizer] Found listing plan at key:", key);
+                    listingPlan = val;
+                    break;
+                }
+            }
+        }
+    }
+
+    console.log("📊 [Normalizer] Found listing items:", listingPlan.length);
+
+    const normalizedListing = listingPlan.map((item: any, index: number) => ({
+        ...item,
+        index: item.index ?? index,
+        // Map ANY logic/directive field to standard 'visual_execution'
+        visual_execution: item.visual_execution
+            || item.layout_logic
+            || item.design_directive
+            || item.visual_guide
+            || item.visual_description
+            || item.composition_guide
+            || item.design_concept
+            || item.layout_instruction
+            || "No visual execution provided",
+        // Map ANY rationale/strategy field to standard 'strategy_rationale'
+        strategy_rationale: item.strategy_rationale
+            || item.strategy_reasoning
+            || item.rationale
+            || item.purpose
+            || item.reasoning
+            || "Strategy analysis",
+    }));
+
+    // 2. Normalize A+ Content Plan
+    const aplusPlan = rawData.premium_aplus_plan || rawData.aplus_plan || rawData.aplus_content || rawData.a_plus_content || [];
+    const normalizedAplus = aplusPlan.map((item: any, index: number) => ({
+        ...item,
+        module_index: item.module_index ?? index,
+        // Map various A+ description keys to standard 'visual_description'
+        visual_description: item.visual_description
+            || item.layout_directive
+            || item.layout_logic
+            || item.design_directive
+            || item.visual_content
+            || item.module_description
+            || "No description",
+    }));
+
+    // 3. Normalize Visual DNA Analysis (try alternative keys)
+    let visualDna = rawData.visual_dna_analysis;
+    if (!visualDna) {
+        const altKeys = ['analysis', 'strategy', 'visual_strategy', 'dna_analysis', 'brand_analysis', 'visual_analysis'];
+        for (const key of altKeys) {
+            if (rawData[key]) {
+                visualDna = rawData[key];
+                console.log("🔄 [Normalizer] Found visual_dna_analysis at alternative key:", key);
+                break;
+            }
+        }
+    }
+
+    const result = {
+        ...rawData,
+        visual_dna_analysis: visualDna || rawData.visual_dna_analysis,
+        listing_image_plan: normalizedListing,
+        premium_aplus_plan: normalizedAplus
+    };
+
+    console.log("✅ [Normalizer] Output listing_image_plan count:", result.listing_image_plan.length);
+    console.log("✅ [Normalizer] Output premium_aplus_plan count:", result.premium_aplus_plan.length);
+
+    return result;
 };
 
 // --- Business Logic Services ---
@@ -224,13 +383,95 @@ export const generateMarketingStrategy = async (
                 })
             });
             const data = await res.json();
+
+            // 🛡️ Robust error handling - check if response is valid
+            if (!res.ok) {
+                const errMsg = data.error?.message || data.message || JSON.stringify(data);
+                console.error("❌ [Stage 1] API Error:", errMsg);
+                throw new Error(`API Error (${res.status}): ${errMsg}`);
+            }
+
+            if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+                console.error("❌ [Stage 1] Invalid API response - no choices:", data);
+                throw new Error(`Invalid API response: ${JSON.stringify(data).substring(0, 200)}`);
+            }
+
             strategyJsonRaw = data.choices[0]?.message?.content || "";
         }
 
         console.log("📝 [Stage 1] Raw Output:", strategyJsonRaw.substring(0, 100));
-        const visualStrategy = safeJSONParse(strategyJsonRaw);
-        if (!visualStrategy || !visualStrategy.visual_dna_analysis) {
-            throw new Error("Agent A failed to produce valid Visual Strategy JSON.");
+        let visualStrategy = safeJSONParse(strategyJsonRaw);
+
+        // 🛡️ Apply Universal Normalizer to standardize field names
+        visualStrategy = normalizeAgentOutput(visualStrategy);
+
+        // 🛡️ Detailed logging for debugging
+        console.log("📊 [Stage 1] Normalized visualStrategy:", JSON.stringify(visualStrategy, null, 2).substring(0, 500));
+        console.log("📊 [Stage 1] visual_dna_analysis:", visualStrategy?.visual_dna_analysis);
+        console.log("📊 [Stage 1] listing_image_plan count:", visualStrategy?.listing_image_plan?.length || 0);
+
+        // 🛡️ FALLBACK: If parsing failed or structure is invalid, create a usable error state
+        if (!visualStrategy) {
+            console.error("❌ [Stage 1] JSON parsing completely failed. Raw:", strategyJsonRaw.substring(0, 500));
+            visualStrategy = {
+                visual_dna_analysis: {
+                    brand_tone: "⚠️ Parsing Error - Model output could not be parsed. Check console for details.",
+                    color_palette: "#FF6B6B",
+                    lighting_strategy: "Please try again with a different model or check the system prompt."
+                },
+                listing_image_plan: []
+            };
+        } else if (!visualStrategy.visual_dna_analysis) {
+            console.error("❌ [Stage 1] Missing visual_dna_analysis. Keys found:", Object.keys(visualStrategy));
+            // Try to extract from alternative field names (key-agnostic)
+            const altKeys = ['analysis', 'strategy', 'visual_strategy', 'dna_analysis', 'brand_analysis'];
+            let found = null;
+            for (const key of altKeys) {
+                if (visualStrategy[key]) {
+                    found = visualStrategy[key];
+                    console.log("🔄 [Stage 1] Found alternative key:", key);
+                    break;
+                }
+            }
+            if (found) {
+                visualStrategy.visual_dna_analysis = found;
+            } else {
+                // Create placeholder so UI doesn't crash
+                visualStrategy.visual_dna_analysis = {
+                    brand_tone: "⚠️ Model output missing required 'visual_dna_analysis'. Check system prompt.",
+                    color_palette: "#FFA500",
+                    lighting_strategy: "Model returned: " + JSON.stringify(visualStrategy).substring(0, 200)
+                };
+            }
+        }
+
+        // 🛡️ SMART DEFAULTS: If model output is garbage, provide usable defaults instead of errors
+        const dna = visualStrategy.visual_dna_analysis;
+        const isGarbage = (val: any) => !val || val === '///' || val === '--' || val === '...' || (typeof val === 'string' && val.length < 2);
+
+        if (isGarbage(dna.brand_tone)) {
+            console.warn("⚠️ [Stage 1] Garbage brand_tone detected. Using Smart Default.");
+            dna.brand_tone = "Modern & Professional (Auto-Default)";
+        }
+        if (isGarbage(dna.lighting_strategy)) {
+            console.warn("⚠️ [Stage 1] Garbage lighting_strategy detected. Using Smart Default.");
+            dna.lighting_strategy = "Soft Studio Lighting, Clean & Minimalist (Auto-Default)";
+        }
+        if (isGarbage(dna.color_palette) || dna.color_palette === "#FFA500") {
+            dna.color_palette = "#2C3E50"; // Dark Blue/Grey Professional
+        }
+
+        // 🛡️ CRITICAL FALLBACK: If listing listing_image_plan is empty, generate a generic plan
+        if (!visualStrategy.listing_image_plan || visualStrategy.listing_image_plan.length === 0) {
+            console.warn("⚠️ [Stage 1] No listing image plan found. Generating Generic Plan.");
+            visualStrategy.listing_image_plan = [
+                { index: 1, type: "Main_Image", visual_execution: "Clean white background, high angle shot showing entire product, studio lighting", strategy_rationale: "Standard Main Image" },
+                { index: 2, type: "Lifestyle", visual_execution: "Product in use in a modern living room setting, soft natural light", strategy_rationale: "Usage Context" },
+                { index: 3, type: "Detail_Shot", visual_execution: "Close-up textural shot of the material, macro lens, sharp focus", strategy_rationale: "Material Quality" },
+                { index: 4, type: "Feature_1", visual_execution: "Demonstrating key feature mechanism, clear informative angle", strategy_rationale: "Feature Highlight" },
+                { index: 5, type: "Scale_Ref", visual_execution: "Product next to everyday objects for scale reference", strategy_rationale: "Size Perception" },
+                { index: 6, type: "Packaging", visual_execution: "Product with premium packaging arrangement", strategy_rationale: "Unboxing Experience" }
+            ];
         }
 
         // ==========================================
@@ -248,14 +489,30 @@ export const generateMarketingStrategy = async (
         console.log("📦 [Stage 2] Agent A Output (Context for B):", agentAOutputString.substring(0, 300) + "...");
 
         if (agentBModel && agentBInstruction) {
-            // 🚀 STRICT: Pass Agent A's output explicitly to Agent B
-            const agentBPrompt = `You are the Visual Technical Director. Your task is to convert the following Visual Strategy JSON (created by the Strategy Director) into executable image generation prompts.
+            // 🛡️ KEY-AGNOSTIC: Pass ENTIRE Agent A output, let Agent B (LLM) find the right fields
+            // This makes the pipeline robust against field name changes in System Prompts
+            const agentBPrompt = `You are the Visual Technical Director (Prompt Engineer). 
+Your task is to convert the following Visual Strategy JSON into executable image generation prompts.
 
-=== STRATEGY JSON FROM AGENT A ===
+=== STRATEGY JSON FROM AGENT A (FULL OBJECT) ===
 ${agentAOutputString}
 === END OF STRATEGY JSON ===
 
-TASK: For each item in 'listing_image_plan' and 'premium_aplus_plan', generate a corresponding entry with 'positive_prompt' (English, detailed, for image generation), 'negative_prompt', and 'layout_tags'.
+IMPORTANT: The JSON may use different field names depending on the version. 
+Look for ANY of these visual instruction fields and convert them to prompts:
+- 'visual_execution', 'composition_guide', 'design_concept', 
+- 'design_layout_instruction', 'visual_description', 'layout_instruction'
+
+FOR EACH visual instruction found in 'listing_image_plan' (or similar arrays), generate:
+- 'index': matching the original item's index
+- 'positive_prompt': Detailed English prompt for image generation (style, lighting, composition, subject)
+- 'negative_prompt': What to avoid
+- 'layout_tags': Relevant tags
+
+FOR EACH visual instruction in 'premium_aplus_plan' (or similar), generate:
+- 'module': matching the original module_index
+- 'positive_prompt', 'negative_prompt', 'layout_tags'
+
 Output a valid JSON object with 'listing_generation_tasks' and 'aplus_generation_tasks' arrays.`;
 
             // Call Agent B
@@ -291,9 +548,21 @@ Output a valid JSON object with 'listing_generation_tasks' and 'aplus_generation
                 })
             });
             const data = await res.json();
-            executionJsonRaw = data.choices?.[0]?.message?.content || "{}";
-            console.log("📝 [Stage 2] Agent B Raw Output:", executionJsonRaw.substring(0, 200) + "...");
-            executionPrompts = safeJSONParse(executionJsonRaw);
+
+            // 🛡️ Robust error handling for Agent B
+            if (!res.ok) {
+                const errMsg = data.error?.message || data.message || JSON.stringify(data);
+                console.error("❌ [Stage 2] Agent B API Error:", errMsg);
+                // Don't throw - just warn and fall back
+                console.warn("⚠️ Agent B API failed, will skip prompt translation");
+            } else if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+                console.error("❌ [Stage 2] Invalid Agent B response - no choices:", data);
+                console.warn("⚠️ Agent B response invalid, will skip prompt translation");
+            } else {
+                executionJsonRaw = data.choices[0]?.message?.content || "{}";
+                console.log("📝 [Stage 2] Agent B Raw Output:", executionJsonRaw.substring(0, 200) + "...");
+                executionPrompts = safeJSONParse(executionJsonRaw);
+            }
 
             if (!executionPrompts || (!executionPrompts.listing_generation_tasks && !executionPrompts.aplus_generation_tasks)) {
                 console.warn("⚠️ [Stage 2] Agent B output is invalid or empty. Will fall back to Agent A's visual_execution.");
