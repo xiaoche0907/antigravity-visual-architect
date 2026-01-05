@@ -158,7 +158,7 @@ export const generateMarketingStrategy = async (
         // 🟢 STAGE 1: STRATEGY DIRECTOR (AGENT A)
         // ==========================================
         reportProgress('strategy', '🧠 (Agent A) Strategy Director is analyzing Visual DNA...');
-        
+
         // 1. Construct Prompt for Agent A
         const strategySystemInstruction = config.brain.systemInstruction; // Should be the new V7.0 Prompt
         const agentAPrompt = `
@@ -173,17 +173,17 @@ export const generateMarketingStrategy = async (
 
         // 2. Call LLM (Agent A)
         let strategyJsonRaw = "";
-        
+
         // ... (Reuse existing LLM call logic, simplified here for brevity, assume similar to before)
         // NOTE: In a real refactor, checking provider types (Google vs OpenAI) is needed. 
         // For brevity in this replacement block, I will assume the `callLLM` logic is abstracted or inline.
         // Since I need to replace the whole function, I must include the calling logic.
-        
+
         if (textModel.provider === 'google') {
             const ai = new GoogleGenAI({ apiKey: textModel.apiKey });
             const parts: any[] = [{ text: agentAPrompt }];
             input.productImages.slice(0, 2).forEach(img => {
-                 parts.push({ inlineData: { mimeType: 'image/jpeg', data: img.split(',')[1] } });
+                parts.push({ inlineData: { mimeType: 'image/jpeg', data: img.split(',')[1] } });
             });
             const result = await ai.models.generateContent({
                 model: textModel.modelId,
@@ -192,39 +192,39 @@ export const generateMarketingStrategy = async (
             });
             strategyJsonRaw = result.text?.trim() || "";
         } else {
-             // OpenAI Compatible Logic
-             // ... Same endpoint resolution logic ...
-             let endpoint = textModel.baseUrl;
-             // ... (Grsai/Jiekou fixes) ...
-             if (textModel.provider === 'grsai' || endpoint.includes('grsai')) {
-                 if (!endpoint.includes('grsaiapi.com')) endpoint = 'https://grsaiapi.com/v1';
-             }
-             if (!endpoint.endsWith('/chat/completions')) endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
+            // OpenAI Compatible Logic
+            // ... Same endpoint resolution logic ...
+            let endpoint = textModel.baseUrl;
+            // ... (Grsai/Jiekou fixes) ...
+            if (textModel.provider === 'grsai' || endpoint.includes('grsai')) {
+                if (!endpoint.includes('grsaiapi.com')) endpoint = 'https://grsaiapi.com/v1';
+            }
+            if (!endpoint.endsWith('/chat/completions')) endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
 
-             const messages: any[] = [
-                 { role: "system", content: strategySystemInstruction },
-                 { role: "user", content: agentAPrompt }
-             ];
-             // Add images (if supported)
-             if (input.productImages.length > 0) {
-                 const contentParts: any[] = [{ type: "text", text: agentAPrompt }];
-                 // ... image pushing logic ...
-                 input.productImages.slice(0, 1).forEach(img => contentParts.push({ type: "image_url", image_url: { url: img } }));
-                 messages[1] = { role: "user", content: contentParts };
-             }
+            const messages: any[] = [
+                { role: "system", content: strategySystemInstruction },
+                { role: "user", content: agentAPrompt }
+            ];
+            // Add images (if supported)
+            if (input.productImages.length > 0) {
+                const contentParts: any[] = [{ type: "text", text: agentAPrompt }];
+                // ... image pushing logic ...
+                input.productImages.slice(0, 1).forEach(img => contentParts.push({ type: "image_url", image_url: { url: img } }));
+                messages[1] = { role: "user", content: contentParts };
+            }
 
-             const res = await fetch(getProxiedUrl(endpoint), {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${textModel.apiKey}` },
-                 body: JSON.stringify({
-                     model: textModel.modelId,
-                     messages,
-                     temperature: 0.7,
-                     response_format: { type: "json_object" }
-                 })
-             });
-             const data = await res.json();
-             strategyJsonRaw = data.choices[0]?.message?.content || "";
+            const res = await fetch(getProxiedUrl(endpoint), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${textModel.apiKey}` },
+                body: JSON.stringify({
+                    model: textModel.modelId,
+                    messages,
+                    temperature: 0.7,
+                    response_format: { type: "json_object" }
+                })
+            });
+            const data = await res.json();
+            strategyJsonRaw = data.choices[0]?.message?.content || "";
         }
 
         console.log("📝 [Stage 1] Raw Output:", strategyJsonRaw.substring(0, 100));
@@ -237,39 +237,39 @@ export const generateMarketingStrategy = async (
         // 🔵 STAGE 2: VISUAL DIRECTOR (AGENT B)
         // ==========================================
         reportProgress('translating', '🎨 (Agent B) Visual Director is crafting execution prompts...');
-        
+
         let executionPrompts = null;
         const agentBModel = promptEngineerConfig?.model || textModel; // Use specific model or fallback to main
         const agentBInstruction = promptEngineerConfig?.instruction || ""; // Should be V7.0 Prompt Engineer Prompt
 
         if (agentBModel && agentBInstruction) {
-             const agentBPrompt = `Here is the Visual Strategy JSON defined by the Director.
+            const agentBPrompt = `Here is the Visual Strategy JSON defined by the Director.
              Use this specific DNA and Plan to generate the prompts:
              ${JSON.stringify(visualStrategy)}`;
 
-             // Call Agent B
-             let executionJsonRaw = "";
-             // ... Reuse call logic ...
-             // Simplified call for Agent B (Text to Text mainly)
-             let endpoint = agentBModel.baseUrl;
-             if (!endpoint.endsWith('/chat/completions')) endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
-             
-             const res = await fetch(getProxiedUrl(endpoint), {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentBModel.apiKey}` },
-                 body: JSON.stringify({
-                     model: agentBModel.modelId,
-                     messages: [
-                         { role: "system", content: agentBInstruction },
-                         { role: "user", content: agentBPrompt }
-                     ],
-                     temperature: 0.7,
-                     response_format: { type: "json_object" }
-                 })
-             });
-             const data = await res.json();
-             executionJsonRaw = data.choices?.[0]?.message?.content || "{}";
-             executionPrompts = safeJSONParse(executionJsonRaw);
+            // Call Agent B
+            let executionJsonRaw = "";
+            // ... Reuse call logic ...
+            // Simplified call for Agent B (Text to Text mainly)
+            let endpoint = agentBModel.baseUrl;
+            if (!endpoint.endsWith('/chat/completions')) endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
+
+            const res = await fetch(getProxiedUrl(endpoint), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentBModel.apiKey}` },
+                body: JSON.stringify({
+                    model: agentBModel.modelId,
+                    messages: [
+                        { role: "system", content: agentBInstruction },
+                        { role: "user", content: agentBPrompt }
+                    ],
+                    temperature: 0.7,
+                    response_format: { type: "json_object" }
+                })
+            });
+            const data = await res.json();
+            executionJsonRaw = data.choices?.[0]?.message?.content || "{}";
+            executionPrompts = safeJSONParse(executionJsonRaw);
         }
 
         reportProgress('done', '✅ Strategy & Execution Plan Ready!');
@@ -280,10 +280,10 @@ export const generateMarketingStrategy = async (
         // We map the new structure back to the legacy one for compatibility if needed, 
         // OR we just return the new fields and let UI handle it.
         // The implementation plan says "Combine strategy and execution data".
-        
+
         // Map to legacy fields for backward compatibility where possible
         const legacyAnalysis = `### Visual DNA Analysis\n**Brand Tone:** ${visualStrategy.visual_dna_analysis.brand_tone}\n\n**Lighting:** ${visualStrategy.visual_dna_analysis.lighting_strategy}`;
-        
+
         const legacySecondaryImages = (visualStrategy.listing_image_plan || []).map((item: any, idx: number) => {
             // Find matching execution prompt
             const exec = executionPrompts?.listing_generation_tasks?.find((t: any) => t.index === item.index);
@@ -297,14 +297,14 @@ export const generateMarketingStrategy = async (
         });
 
         const legacyAPlus = (visualStrategy.premium_aplus_plan || []).map((item: any, idx: number) => {
-             const exec = executionPrompts?.aplus_generation_tasks?.find((t: any) => t.module === item.module_index);
-             return {
-                 id: item.module_index,
-                 moduleType: item.module_type,
-                 content: item.narrative_goal,
-                 visualGuidance: item.visual_description,
-                 visualPrompt: exec?.positive_prompt || item.visual_description
-             };
+            const exec = executionPrompts?.aplus_generation_tasks?.find((t: any) => t.module === item.module_index);
+            return {
+                id: item.module_index,
+                moduleType: item.module_type,
+                content: item.narrative_goal,
+                visualGuidance: item.visual_description,
+                visualPrompt: exec?.positive_prompt || item.visual_description
+            };
         });
 
         return {
@@ -339,11 +339,12 @@ const pollModelScopeTask = async (taskId: string, apiKey: string): Promise<strin
         // 等待 2 秒
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // 使用代理 API 来绕过 CORS
-        const res = await fetch(`/ api / modelscope ? action = poll & taskId=${taskId} `, {
+        // 使用 Vercel 代理转发 ModelScope 请求
+        const targetUrl = `https://api-inference.modelscope.cn/v1/tasks/${taskId}`;
+        const res = await fetch(`/api/proxy?target=${encodeURIComponent(targetUrl)}`, {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${apiKey} `
+                'Authorization': `Bearer ${apiKey}`
             }
         });
 
@@ -466,7 +467,7 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
 
     if (aspectRatio === '21:9' || aspectRatio === '16:9') {
         if (isNano) {
-             size = "1464x600"; // 🚀 User Rule: A+ Hero/Banner (Ultra Wide)
+            size = "1464x600"; // 🚀 User Rule: A+ Hero/Banner (Ultra Wide)
         } else if (imageModel.provider === 'modelscope') {
             size = "1280x720";
         } else if (isDallE3) {
@@ -843,11 +844,11 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
             // *******************************************
             // 1. 提交任务 (POST /v1/images/generations)
             // *******************************************
-            // 注意：Vite 代理已配置 /api/modelscope -> https://api-inference.modelscope.cn/v1
-            // 我们直接请求代理路径，代理会处理 X-ModelScope-Async-Mode 头
-            const postUrl = '/api/modelscope?action=generate';
+            // 注意：使用 Vercel Proxy 转发
+            const targetUrl = 'https://api-inference.modelscope.cn/v1/images/generations';
+            const postUrl = `/api/proxy?target=${encodeURIComponent(targetUrl)}`;
 
-            console.log(`📡 [ModelScope] Submitting Task to: ${postUrl}`);
+            console.log(`📡 [ModelScope] Submitting Task to: ${postUrl} (via Proxy)`);
 
             // 🧠 智能精简：使用文本模型压缩超长提示词 (仅 ModelScope 需要)
             const optimizedPrompt = await summarizePromptForModelScope(prompt, textModelForSummarize || null);
@@ -908,7 +909,8 @@ export const generateVisual = async (prompt: string, imageModel: ModelConfig | n
             // *******************************************
             // 2. 轮询状态 (GET /v1/tasks/{taskId})
             // *******************************************
-            const pollUrl = `/api/modelscope?action=poll&taskId=${taskId}`;
+            const pollTarget = `https://api-inference.modelscope.cn/v1/tasks/${taskId}`;
+            const pollUrl = `/api/proxy?target=${encodeURIComponent(pollTarget)}`;
             let attempts = 0;
             const maxAttempts = 30; // 30 * 2s = 60s timeout
 
