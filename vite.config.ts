@@ -95,7 +95,8 @@ function universalProxyPlugin(): Plugin {
     name: 'universal-proxy',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        if (!req.url?.startsWith('/api/proxy/universal')) {
+        // Support both specific universal path and the generic one matching Vercel
+        if (!req.url?.startsWith('/api/proxy')) {
           return next();
         }
 
@@ -111,7 +112,8 @@ function universalProxyPlugin(): Plugin {
         }
 
         const url = new URL(req.url, 'http://localhost');
-        const targetUrl = url.searchParams.get('url');
+        // Support 'target' (Vercel standard in this project) or 'url' (Legacy)
+        const targetUrl = url.searchParams.get('target') || url.searchParams.get('url');
 
         if (!targetUrl) {
           res.statusCode = 400;

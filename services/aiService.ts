@@ -97,7 +97,7 @@ const safeJSONParse = (text: string): any => {
 const getProxiedUrl = (originalUrl: string): string => {
     // 只在浏览器环境且 URL 开头为 http(s) 时使用代理
     if (typeof window !== 'undefined' && originalUrl.startsWith('http')) {
-        return `/api/proxy/universal?url=${encodeURIComponent(originalUrl)}`;
+        return `/api/proxy?target=${encodeURIComponent(originalUrl)}`;
     }
     return originalUrl;
 };
@@ -1278,14 +1278,24 @@ export const chatWithAI = async (
         if (modelConfig.provider === 'modelscope' || endpoint.includes('modelscope.cn')) {
             // Check if running in browser environment to avoid affecting server-side (if any)
             if (typeof window !== 'undefined') {
-                endpoint = '/api/proxy/modelscope';
-            }
-        }
+                // 1. Smart Fix: Ensure /v1 if missing for ModelScope
+                if (!endpoint.includes('/v1/chat/completions') && !endpoint.includes('/v1')) {
+                    // Try to reconstruct valid endpoint from base
+                    let base = endpoint.split('/chat/completions')[0];
+                    if (!base.endsWith('/v1')) base = base + '/v1';
+                    endpoint = base + '/chat/completions';
+                }
 
-        // Ensure endpoint ends with /chat/completions
-        endpoint = endpoint.endsWith('/chat/completions')
-            ? endpoint
-            : `${endpoint.replace(/\/$/, '')}/chat/completions`;
+                // 2. Wrap via Proxy
+                endpoint = getProxiedUrl(endpoint);
+                // Note: getProxiedUrl now returns /api/proxy?target=... which is what we want
+            }
+        } else {
+            // For others, ensure endpoint ends with /chat/completions
+            endpoint = endpoint.endsWith('/chat/completions')
+                ? endpoint
+                : `${endpoint.replace(/\/$/, '')}/chat/completions`;
+        }
 
         const apiMessages: any[] = [
             { role: 'system', content: systemPrompt }
@@ -1333,7 +1343,7 @@ export const chatWithAI = async (
             });
         });
 
-        const response = await fetch(getProxiedUrl(endpoint), {
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
