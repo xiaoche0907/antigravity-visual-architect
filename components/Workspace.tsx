@@ -317,7 +317,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
             } else {
                 updated.aPlusContent[currentIndex].generatedImageUrl = "PENDING:正在绘制... (勿刷新)";
             }
-            setStrategy({ ...updated }); 
+            setStrategy({ ...updated });
 
             try {
                 let prompt = '';
@@ -573,7 +573,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                             <div className="bg-gradient-to-br from-[#1e1f20] via-[#252a31] to-[#1e1f20] p-8 md:p-10 rounded-3xl border border-[#A8C7FA]/20 shadow-2xl relative overflow-hidden group">
                                                 {/* Background Decoration */}
                                                 <div className="absolute -top-20 -right-20 w-64 h-64 bg-[#A8C7FA]/5 rounded-full blur-3xl group-hover:bg-[#A8C7FA]/10 transition-all duration-1000"></div>
-                                                
+
                                                 <div className="relative z-10">
                                                     <div className="flex items-center gap-4 mb-8">
                                                         <div className="w-12 h-12 bg-[#A8C7FA]/10 rounded-xl flex items-center justify-center border border-[#A8C7FA]/30">
@@ -616,14 +616,14 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                 <div className="flex flex-wrap gap-4">
                                                                     {/* Render Swatches */}
                                                                     {(() => {
-                                                                        const rawPalette = strategy.visualStrategy.visual_dna_analysis.color_palette || 
-                                                                                         (strategy.visualStrategy.visual_dna_analysis as any).color_palette_hex || "";
+                                                                        const rawPalette = strategy.visualStrategy.visual_dna_analysis.color_palette ||
+                                                                            (strategy.visualStrategy.visual_dna_analysis as any).color_palette_hex || "";
                                                                         const hexCodes = rawPalette.match(/#[0-9A-Fa-f]{6}/g) || [];
                                                                         return hexCodes.length > 0 ? hexCodes.map((color, i) => (
                                                                             <div key={i} className="group relative">
-                                                                                <div 
+                                                                                <div
                                                                                     className="w-14 h-14 rounded-2xl shadow-lg border border-white/10 ring-2 ring-transparent group-hover:ring-[#A8C7FA] transition-all cursor-pointer transform group-hover:scale-110"
-                                                                                    style={{backgroundColor: color}}
+                                                                                    style={{ backgroundColor: color }}
                                                                                     title={color}
                                                                                     onClick={() => copyToClipboard(color)}
                                                                                 />
@@ -632,7 +632,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                                 </span>
                                                                             </div>
                                                                         )) : (
-                                                                           <p className="text-sm text-gray-400">{rawPalette}</p>
+                                                                            <p className="text-sm text-gray-400">{rawPalette}</p>
                                                                         );
                                                                     })()}
                                                                 </div>
@@ -696,7 +696,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                         ⚠️
                                                                     </div>
                                                                 ) : img.generatedImageUrl.startsWith('PENDING') ? (
-                                                                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#A8C7FA]"></div>
+                                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#A8C7FA]"></div>
                                                                 ) : (
                                                                     <img src={img.generatedImageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-110" alt={`Review ${i}`} />
                                                                 )
@@ -842,14 +842,23 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                     <span className="group-open:rotate-90 transition-transform">▶</span> Show MJ Prompt
                                                                 </summary>
                                                                 <div className="mt-2 relative">
-                                                                    <p className="text-[10px] font-mono text-gray-500 bg-black p-2 pr-16 rounded selectable">{String(img.visualPrompt || 'No Prompt')}</p>
-                                                                    <button
-                                                                        onClick={() => copyToClipboard(String(img.visualPrompt || ''))}
-                                                                        className="absolute top-1 right-1 px-2 py-1 bg-[#3c4043] hover:bg-[#A8C7FA] text-white text-[10px] rounded transition-colors"
-                                                                        title="复制提示词"
-                                                                    >
-                                                                        📋 复制
-                                                                    </button>
+                                                                    {/* 🚨 FIX: Read from Agent B's execution prompts, NOT Agent A's visual_execution */}
+                                                                    {(() => {
+                                                                        const matchingTask = strategy.executionPrompts?.listing_generation_tasks?.find((t: any) => t.index === img.id);
+                                                                        const promptToShow = matchingTask?.positive_prompt || (strategy.executionPrompts ? 'No prompt generated' : 'Generating...');
+                                                                        return (
+                                                                            <>
+                                                                                <p className="text-[10px] font-mono text-gray-500 bg-black p-2 pr-16 rounded selectable">{promptToShow}</p>
+                                                                                <button
+                                                                                    onClick={() => copyToClipboard(promptToShow)}
+                                                                                    className="absolute top-1 right-1 px-2 py-1 bg-[#3c4043] hover:bg-[#A8C7FA] text-white text-[10px] rounded transition-colors"
+                                                                                    title="复制提示词"
+                                                                                >
+                                                                                    📋 复制
+                                                                                </button>
+                                                                            </>
+                                                                        );
+                                                                    })()}
                                                                 </div>
                                                             </details>
                                                         </div>
@@ -995,14 +1004,23 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                     <span className="group-open:rotate-90 transition-transform">▶</span> Show Image Prompt
                                                                 </summary>
                                                                 <div className="mt-2 relative">
-                                                                    <p className="text-[10px] font-mono text-gray-500 bg-black p-2 pr-16 rounded selectable">{String(m.visualPrompt || m.visualGuidance || '无生图提示词')}</p>
-                                                                    <button
-                                                                        onClick={() => copyToClipboard(String(m.visualPrompt || m.visualGuidance || ''))}
-                                                                        className="absolute top-1 right-1 px-2 py-1 bg-[#3c4043] hover:bg-[#A8C7FA] text-white text-[10px] rounded transition-colors"
-                                                                        title="复制提示词"
-                                                                    >
-                                                                        📋 复制
-                                                                    </button>
+                                                                    {/* 🚨 FIX: Read from Agent B's execution prompts for A+ content */}
+                                                                    {(() => {
+                                                                        const matchingTask = strategy.executionPrompts?.aplus_generation_tasks?.find((t: any) => t.module === m.id);
+                                                                        const promptToShow = matchingTask?.positive_prompt || (strategy.executionPrompts ? 'No prompt generated' : 'Generating...');
+                                                                        return (
+                                                                            <>
+                                                                                <p className="text-[10px] font-mono text-gray-500 bg-black p-2 pr-16 rounded selectable">{promptToShow}</p>
+                                                                                <button
+                                                                                    onClick={() => copyToClipboard(promptToShow)}
+                                                                                    className="absolute top-1 right-1 px-2 py-1 bg-[#3c4043] hover:bg-[#A8C7FA] text-white text-[10px] rounded transition-colors"
+                                                                                    title="复制提示词"
+                                                                                >
+                                                                                    📋 复制
+                                                                                </button>
+                                                                            </>
+                                                                        );
+                                                                    })()}
                                                                 </div>
                                                             </details>
                                                         </div>

@@ -242,17 +242,40 @@ export const generateMarketingStrategy = async (
         const agentBModel = promptEngineerConfig?.model || textModel; // Use specific model or fallback to main
         const agentBInstruction = promptEngineerConfig?.instruction || ""; // Should be V7.0 Prompt Engineer Prompt
 
+        // 🚨 CRITICAL: Agent B MUST receive Agent A's output as context
+        // Convert the entire visualStrategy to a JSON string to pass as context
+        const agentAOutputString = JSON.stringify(visualStrategy, null, 2);
+        console.log("📦 [Stage 2] Agent A Output (Context for B):", agentAOutputString.substring(0, 300) + "...");
+
         if (agentBModel && agentBInstruction) {
-            const agentBPrompt = `Here is the Visual Strategy JSON defined by the Director.
-             Use this specific DNA and Plan to generate the prompts:
-             ${JSON.stringify(visualStrategy)}`;
+            // 🚀 STRICT: Pass Agent A's output explicitly to Agent B
+            const agentBPrompt = `You are the Visual Technical Director. Your task is to convert the following Visual Strategy JSON (created by the Strategy Director) into executable image generation prompts.
+
+=== STRATEGY JSON FROM AGENT A ===
+${agentAOutputString}
+=== END OF STRATEGY JSON ===
+
+TASK: For each item in 'listing_image_plan' and 'premium_aplus_plan', generate a corresponding entry with 'positive_prompt' (English, detailed, for image generation), 'negative_prompt', and 'layout_tags'.
+Output a valid JSON object with 'listing_generation_tasks' and 'aplus_generation_tasks' arrays.`;
 
             // Call Agent B
             let executionJsonRaw = "";
-            // ... Reuse call logic ...
-            // Simplified call for Agent B (Text to Text mainly)
-            let endpoint = agentBModel.baseUrl;
-            if (!endpoint.endsWith('/chat/completions')) endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
+            let endpoint = agentBModel.baseUrl?.replace(/\/$/, '') || '';
+
+            // Ensure /v1/chat/completions is complete (especially for ModelScope)
+            if (!endpoint.endsWith('/chat/completions')) {
+                // Clean up and reconstruct
+                if (endpoint.includes('/chat/completions')) {
+                    endpoint = endpoint.split('/chat/completions')[0];
+                }
+                // Add /v1 for ModelScope if missing
+                if (endpoint.includes('modelscope.cn') && !endpoint.includes('/v1')) {
+                    endpoint = endpoint + '/v1';
+                }
+                endpoint = endpoint + '/chat/completions';
+            }
+
+            console.log("📡 [Stage 2] Calling Agent B at:", endpoint);
 
             const res = await fetch(getProxiedUrl(endpoint), {
                 method: 'POST',
@@ -269,7 +292,14 @@ export const generateMarketingStrategy = async (
             });
             const data = await res.json();
             executionJsonRaw = data.choices?.[0]?.message?.content || "{}";
+            console.log("📝 [Stage 2] Agent B Raw Output:", executionJsonRaw.substring(0, 200) + "...");
             executionPrompts = safeJSONParse(executionJsonRaw);
+
+            if (!executionPrompts || (!executionPrompts.listing_generation_tasks && !executionPrompts.aplus_generation_tasks)) {
+                console.warn("⚠️ [Stage 2] Agent B output is invalid or empty. Will fall back to Agent A's visual_execution.");
+            }
+        } else {
+            console.warn("⚠️ [Stage 2] Agent B skipped: No model or instruction configured.");
         }
 
         reportProgress('done', '✅ Strategy & Execution Plan Ready!');
@@ -1274,24 +1304,36 @@ export const chatWithAI = async (
             }
         }
 
-        // Apply Proxy for ModelScope to avoid CORS
-        if (modelConfig.provider === 'modelscope' || endpoint.includes('modelscope.cn')) {
-            // Check if running in browser environment to avoid affecting server-side (if any)
-            if (typeof window !== 'undefined') {
-                // 1. Smart Fix: Ensure /v1 if missing for ModelScope
-                if (!endpoint.includes('/v1/chat/completions') && !endpoint.includes('/v1')) {
-                    // Try to reconstruct valid endpoint from base
-                    let base = endpoint.split('/chat/completions')[0];
-                    if (!base.endsWith('/v1')) base = base + '/v1';
-                    endpoint = base + '/chat/completions';
+        // Apply Proxy for ModelScope and Jiekou to avoid CORS
+        const needsProxy = modelConfig.provider === 'modelscope' ||
+            endpoint.includes('modelscope.cn') ||
+            endpoint.includes('jiekou.ai');
+
+        if (needsProxy && typeof window !== 'undefined') {
+            // 1. Smart Fix: Ensure /v1/chat/completions path is complete
+            if (!endpoint.endsWith('/chat/completions')) {
+                // Clean up the endpoint first
+                let base = endpoint.replace(/\/$/, '');
+
+                // Remove any incomplete path fragments
+                if (base.includes('/chat/completions')) {
+                    base = base.split('/chat/completions')[0];
                 }
 
-                // 2. Wrap via Proxy
-                endpoint = getProxiedUrl(endpoint);
-                // Note: getProxiedUrl now returns /api/proxy?target=... which is what we want
+                // Ensure /v1 is present for ModelScope
+                if (endpoint.includes('modelscope.cn') && !base.includes('/v1')) {
+                    base = base + '/v1';
+                }
+
+                endpoint = base + '/chat/completions';
             }
+
+            console.log(`📡 [chatWithAI] Proxying ${modelConfig.provider} to: ${endpoint}`);
+
+            // 2. Wrap via Proxy (MUST use absolute path /api/proxy)
+            endpoint = getProxiedUrl(endpoint);
         } else {
-            // For others, ensure endpoint ends with /chat/completions
+            // For non-proxied endpoints, ensure /chat/completions
             endpoint = endpoint.endsWith('/chat/completions')
                 ? endpoint
                 : `${endpoint.replace(/\/$/, '')}/chat/completions`;
