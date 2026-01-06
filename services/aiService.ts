@@ -9,6 +9,85 @@ interface AIResponse {
     content: string;
 }
 
+// 🛡️ Helper: Sanitize System Instructions
+// Handles cases where users paste JSON objects directly as system prompts
+// Converts them into proper markdown-formatted instructions that AI can understand
+const sanitizeSystemInstruction = (instruction: string): string => {
+    if (!instruction || typeof instruction !== 'string') {
+        return instruction || '';
+    }
+
+    const trimmed = instruction.trim();
+
+    // Check if it looks like a JSON object (starts with { and ends with })
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+            const parsed = JSON.parse(trimmed);
+            // Successfully parsed as JSON - convert to readable format
+            console.log("⚠️ [sanitizeSystemInstruction] Detected JSON object in system prompt, converting to text format...");
+
+            // Convert the JSON schema into a human-readable prompt
+            let readablePrompt = `You are the **Amazon A9 Strategic Director**.
+Your Goal: Analyze the product and output a Visual Strategy Plan in **Strict JSON**.
+
+### 🛑 LANGUAGE RULES (MUST FOLLOW):
+1.  **Rationale & Visual Description**: MUST be in **SIMPLIFIED CHINESE (简体中文)**. The user needs to read this analysis.
+2.  **Copywriting (Headlines/Bullets)**: MUST be in **ENGLISH** (for the Amazon Global Listing).
+
+### 📤 OUTPUT SCHEMA (JSON ONLY):
+The output should follow this structure:
+\`\`\`json
+${JSON.stringify(parsed, null, 2)}
+\`\`\`
+
+**IMPORTANT**: 
+- Generate valid JSON that matches this schema structure.
+- Use the field names and structure shown above.
+- Include Chinese descriptions for visual execution fields.
+- Include English copywriting for marketing fields.
+`;
+            return readablePrompt;
+        } catch (e) {
+            // Not valid JSON, might just start/end with braces by coincidence
+            console.log("🔍 [sanitizeSystemInstruction] Looks like JSON but failed to parse, using as-is");
+        }
+    }
+
+    // Check for JSON-like content in the middle (e.g., user pasted a partial JSON)
+    // Look for common schema patterns that indicate a pasted JSON output example
+    const jsonPatterns = [
+        /"typography_layout"\s*:/,
+        /"visual_composition"\s*:/,
+        /"listing_image_plan"\s*:/,
+        /"premium_aplus_plan"\s*:/,
+        /"visual_dna_analysis"\s*:/,
+        /"module_type"\s*:/,
+        /"strategy_rationale"\s*:/
+    ];
+
+    const hasJsonPatterns = jsonPatterns.some(pattern => pattern.test(trimmed));
+
+    if (hasJsonPatterns && !trimmed.includes('### ') && !trimmed.includes('## ')) {
+        // This looks like a JSON schema without proper context
+        console.log("⚠️ [sanitizeSystemInstruction] Detected raw JSON schema in system prompt, wrapping with context...");
+
+        return `You are the **Amazon A9 Strategic Director**.
+Your Goal: Analyze the product and output a Visual Strategy Plan in **Strict JSON format**.
+
+### 🛑 CRITICAL RULES:
+1. Output ONLY valid JSON - no markdown, no explanations.
+2. **Strategy Rationale & Visual Descriptions**: MUST be in **SIMPLIFIED CHINESE (简体中文)**.
+3. **Copywriting/Headlines**: MUST be in **ENGLISH**.
+
+### 📤 YOUR OUTPUT MUST MATCH THIS SCHEMA:
+${trimmed}
+
+Generate the JSON output now based on the product data provided by the user.`;
+    }
+
+    return instruction;
+};
+
 // Helper: Robust JSON Parser
 // 🛡️ Enhanced for Vision Model Compatibility (GLM-4.6V, Qwen-VL, etc.)
 // Handles: conversational text, markdown code blocks, malformed JSON
@@ -155,10 +234,40 @@ const safeJSONParse = (text: string): any => {
 
 // 🛡️ Universal Adapter: Normalize AI output to standard fields
 // This ensures UI compatibility regardless of prompt field names
+// 🆕 SKYSPER FORMAT SUPPORT: Handles nested visual_composition/typography_layout objects
 const normalizeAgentOutput = (rawData: any): any => {
     if (!rawData) return rawData;
 
     console.log("🔄 [Normalizer] Processing raw data with keys:", Object.keys(rawData));
+
+    // 🆕 Helper: Convert Skysper nested objects to display string
+    const flattenSkysperFormat = (item: any): string => {
+        const parts: string[] = [];
+
+        // Handle visual_composition object
+        if (item.visual_composition && typeof item.visual_composition === 'object') {
+            const vc = item.visual_composition;
+            if (vc.layout) parts.push(`📐 布局: ${vc.layout}`);
+            if (vc.product_view) parts.push(`📷 视角: ${vc.product_view}`);
+            if (vc.background) parts.push(`🎨 背景: ${vc.background}`);
+            if (vc.lighting) parts.push(`💡 光线: ${vc.lighting}`);
+            if (vc.product_placement) parts.push(`📍 位置: ${vc.product_placement}`);
+        }
+
+        // Handle typography_layout object
+        if (item.typography_layout && typeof item.typography_layout === 'object') {
+            const tl = item.typography_layout;
+            if (tl.logo_position) parts.push(`🏷️ Logo: ${tl.logo_position}`);
+            if (tl.headline) parts.push(`📝 标题: ${tl.headline}`);
+            if (tl.main_headline) parts.push(`📝 主标题: ${tl.main_headline}`);
+            if (tl.subtext || tl.sub_headline) parts.push(`📋 副文案: ${tl.subtext || tl.sub_headline}`);
+            if (tl.icon_bar) parts.push(`🔘 图标栏: ${tl.icon_bar}`);
+            if (tl.brand_logo) parts.push(`🏷️ 品牌Logo: ${tl.brand_logo}`);
+            if (tl.cta_element) parts.push(`🎯 CTA: ${tl.cta_element}`);
+        }
+
+        return parts.length > 0 ? parts.join('\n') : '';
+    };
 
     // 1. Normalize Listing Image Plan - search DEEPLY for any array that looks like image plans
     let listingPlan = rawData.listing_image_plan
@@ -175,8 +284,9 @@ const normalizeAgentOutput = (rawData: any): any => {
         for (const key of Object.keys(rawData)) {
             const val = rawData[key];
             if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
-                // Check if array items look like image plans (have type or index)
-                if (val[0].type || val[0].index !== undefined || val[0].visual_execution || val[0].layout_logic) {
+                // 🆕 SKYSPER FORMAT: Check for visual_composition (object) in addition to visual_execution (string)
+                if (val[0].type || val[0].index !== undefined || val[0].visual_execution ||
+                    val[0].visual_composition || val[0].layout_logic || val[0].strategy_rationale) {
                     console.log("🔍 [Normalizer] Found listing plan at key:", key);
                     listingPlan = val;
                     break;
@@ -187,42 +297,59 @@ const normalizeAgentOutput = (rawData: any): any => {
 
     console.log("📊 [Normalizer] Found listing items:", listingPlan.length);
 
-    const normalizedListing = listingPlan.map((item: any, index: number) => ({
-        ...item,
-        index: item.index ?? index,
-        // Map ANY logic/directive field to standard 'visual_execution'
-        visual_execution: item.visual_execution
-            || item.layout_logic
-            || item.design_directive
-            || item.visual_guide
-            || item.visual_description
-            || item.composition_guide
-            || item.design_concept
-            || item.layout_instruction
-            || "No visual execution provided",
-        // Map ANY rationale/strategy field to standard 'strategy_rationale'
-        strategy_rationale: item.strategy_rationale
-            || item.strategy_reasoning
-            || item.rationale
-            || item.purpose
-            || item.reasoning
-            || "Strategy analysis",
-    }));
+    const normalizedListing = listingPlan.map((item: any, index: number) => {
+        // 🆕 SKYSPER FORMAT: Try to flatten nested objects first
+        const skysperFlattened = flattenSkysperFormat(item);
+
+        return {
+            ...item,
+            index: item.index ?? index + 1, // 🛡️ Ensure 1-indexed
+            // Map ANY logic/directive field to standard 'visual_execution'
+            // 🆕 SKYSPER: Use flattened format if available
+            visual_execution: item.visual_execution
+                || skysperFlattened
+                || item.layout_logic
+                || item.design_directive
+                || item.visual_guide
+                || item.visual_description
+                || item.composition_guide
+                || item.design_concept
+                || item.layout_instruction
+                || "No visual execution provided",
+            // Map ANY rationale/strategy field to standard 'strategy_rationale'
+            strategy_rationale: item.strategy_rationale
+                || item.strategy_reasoning
+                || item.rationale
+                || item.purpose
+                || item.reasoning
+                || "Strategy analysis",
+        };
+    });
 
     // 2. Normalize A+ Content Plan
     const aplusPlan = rawData.premium_aplus_plan || rawData.aplus_plan || rawData.aplus_content || rawData.a_plus_content || [];
-    const normalizedAplus = aplusPlan.map((item: any, index: number) => ({
-        ...item,
-        module_index: item.module_index ?? index,
-        // Map various A+ description keys to standard 'visual_description'
-        visual_description: item.visual_description
+    const normalizedAplus = aplusPlan.map((item: any, index: number) => {
+        // 🆕 SKYSPER FORMAT: Try to flatten nested objects first
+        const skysperFlattened = flattenSkysperFormat(item);
+
+        const desc = item.visual_description
+            || skysperFlattened
             || item.layout_directive
             || item.layout_logic
             || item.design_directive
             || item.visual_content
             || item.module_description
-            || "No description",
-    }));
+            || "No description";
+
+        return {
+            ...item,
+            module_index: item.module_index ?? index + 1, // 🛡️ Ensure 1-indexed
+            // Map various A+ description keys to standard 'visual_description'
+            visual_description: desc,
+            // 🆕 CRITICAL FIX: Also map to 'visual_execution' because getStrategyText() prioritizes it!
+            visual_execution: desc,
+        };
+    });
 
     // 3. Normalize Visual DNA Analysis (try alternative keys)
     let visualDna = rawData.visual_dna_analysis;
@@ -237,6 +364,22 @@ const normalizeAgentOutput = (rawData: any): any => {
         }
     }
 
+    // 🆕 SKYSPER FORMAT: Normalize visual_dna_analysis fields
+    if (visualDna) {
+        // Map brand_standard to brand_tone if missing
+        if (!visualDna.brand_tone && visualDna.brand_standard) {
+            visualDna.brand_tone = visualDna.brand_standard;
+        }
+        // Map visual_strategy to lighting_strategy if missing (as a fallback)
+        if (!visualDna.lighting_strategy && visualDna.visual_strategy) {
+            visualDna.lighting_strategy = visualDna.visual_strategy;
+        }
+        // Ensure required fields exist
+        visualDna.brand_tone = visualDna.brand_tone || visualDna.typography_system || "Brand Tone";
+        visualDna.lighting_strategy = visualDna.lighting_strategy || "Studio Lighting";
+        visualDna.color_palette = visualDna.color_palette || "#ED6D46, #C8E1EF"; // Skysper default colors
+    }
+
     const result = {
         ...rawData,
         visual_dna_analysis: visualDna || rawData.visual_dna_analysis,
@@ -247,15 +390,59 @@ const normalizeAgentOutput = (rawData: any): any => {
     console.log("✅ [Normalizer] Output listing_image_plan count:", result.listing_image_plan.length);
     console.log("✅ [Normalizer] Output premium_aplus_plan count:", result.premium_aplus_plan.length);
 
+    // 🆕 Debug: Log first item to verify structure
+    if (result.listing_image_plan.length > 0) {
+        console.log("🔍 [Normalizer] First listing item visual_execution:",
+            result.listing_image_plan[0].visual_execution?.substring(0, 100));
+    }
+
     return result;
 };
 
 // --- Business Logic Services ---
 
 // Helper: Universal Proxy URL Generator
+// 🆕 Uses dedicated proxy paths for known providers (more stable than generic proxy)
 const getProxiedUrl = (originalUrl: string): string => {
     // 只在浏览器环境且 URL 开头为 http(s) 时使用代理
     if (typeof window !== 'undefined' && originalUrl.startsWith('http')) {
+        // 🆕 Use dedicated proxy paths for known providers (better stability)
+        const lowerUrl = originalUrl.toLowerCase();
+
+        // ModelScope - use dedicated proxy
+        if (lowerUrl.includes('modelscope.cn')) {
+            // Extract path after /v1/
+            const urlObj = new URL(originalUrl);
+            const pathAfterV1 = urlObj.pathname.replace(/^\/v1/, '');
+            console.log(`🔄 [Proxy] Using dedicated ModelScope proxy for: ${pathAfterV1}`);
+            return `/api/proxy/modelscope${pathAfterV1}`;
+        }
+
+        // Dashscope/Aliyun - use dedicated proxy  
+        if (lowerUrl.includes('dashscope.aliyuncs.com')) {
+            const urlObj = new URL(originalUrl);
+            const pathAfterV1 = urlObj.pathname.replace(/^\/compatible-mode\/v1/, '');
+            console.log(`🔄 [Proxy] Using dedicated Dashscope proxy for: ${pathAfterV1}`);
+            return `/api/proxy/dashscope${pathAfterV1}`;
+        }
+
+        // OpenAI - use dedicated proxy
+        if (lowerUrl.includes('api.openai.com')) {
+            const urlObj = new URL(originalUrl);
+            const pathAfterV1 = urlObj.pathname.replace(/^\/v1/, '');
+            console.log(`🔄 [Proxy] Using dedicated OpenAI proxy for: ${pathAfterV1}`);
+            return `/api/proxy/openai${pathAfterV1}`;
+        }
+
+        // Google - use dedicated proxy
+        if (lowerUrl.includes('generativelanguage.googleapis.com')) {
+            const urlObj = new URL(originalUrl);
+            console.log(`🔄 [Proxy] Using dedicated Google proxy for: ${urlObj.pathname}`);
+            return `/api/proxy/google${urlObj.pathname}`;
+        }
+
+        // Fallback: Use generic proxy for other URLs
+        console.log(`🔄 [Proxy] Using generic proxy for: ${originalUrl}`);
         return `/api/proxy?target=${encodeURIComponent(originalUrl)}`;
     }
     return originalUrl;
@@ -319,7 +506,8 @@ export const generateMarketingStrategy = async (
         reportProgress('strategy', '🧠 (Agent A) Strategy Director is analyzing Visual DNA...');
 
         // 1. Construct Prompt for Agent A
-        const strategySystemInstruction = config.brain.systemInstruction; // Should be the new V7.0 Prompt
+        // 🛡️ Sanitize system instruction in case user pasted raw JSON
+        const strategySystemInstruction = sanitizeSystemInstruction(config.brain.systemInstruction);
         const agentAPrompt = `
         Product Data:
         - USPs: ${input.usps}
@@ -372,31 +560,58 @@ export const generateMarketingStrategy = async (
                 messages[1] = { role: "user", content: contentParts };
             }
 
-            const res = await fetch(getProxiedUrl(endpoint), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${textModel.apiKey}` },
-                body: JSON.stringify({
-                    model: textModel.modelId,
-                    messages,
-                    temperature: 0.7,
-                    response_format: { type: "json_object" }
-                })
-            });
-            const data = await res.json();
+            // 🛡️ Build request body - only include response_format for providers that support it
+            const requestBody: any = {
+                model: textModel.modelId,
+                messages,
+                temperature: 0.7,
+            };
 
-            // 🛡️ Robust error handling - check if response is valid
-            if (!res.ok) {
-                const errMsg = data.error?.message || data.message || JSON.stringify(data);
-                console.error("❌ [Stage 1] API Error:", errMsg);
-                throw new Error(`API Error (${res.status}): ${errMsg}`);
+            // Only OpenAI and some compatible APIs support response_format
+            // ModelScope, Dashscope, and many others do NOT support it
+            // 🛡️ Also check modelId and baseUrl for DeepSeek detection (might be configured via openai-compatible)
+            const isDeepSeek = textModel.modelId?.toLowerCase().includes('deepseek') ||
+                textModel.baseUrl?.toLowerCase().includes('deepseek');
+            const supportsJsonMode = ['openai', 'azure', 'deepseek'].includes(textModel.provider?.toLowerCase() || '') || isDeepSeek;
+            if (supportsJsonMode) {
+                requestBody.response_format = { type: "json_object" };
             }
 
-            if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
-                console.error("❌ [Stage 1] Invalid API response - no choices:", data);
-                throw new Error(`Invalid API response: ${JSON.stringify(data).substring(0, 200)}`);
-            }
+            console.log(`📡 [Stage 1] Calling ${textModel.provider} at ${endpoint} (JSON mode: ${supportsJsonMode})`);
 
-            strategyJsonRaw = data.choices[0]?.message?.content || "";
+            try {
+                const res = await fetch(getProxiedUrl(endpoint), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${textModel.apiKey}` },
+                    body: JSON.stringify(requestBody)
+                });
+
+                // 🛡️ Handle non-OK responses or empty bodies gracefully
+                if (!res.ok) {
+                    let errMsg = `API Error (${res.status})`;
+                    try {
+                        const data = await res.json();
+                        errMsg = data.error?.message || data.message || JSON.stringify(data);
+                    } catch (e) {
+                        // Body might be empty
+                        errMsg += " (No response body)";
+                    }
+                    console.error("❌ [Stage 1] API Error:", errMsg);
+                    throw new Error(`API Failed (${res.status}): ${errMsg}`);
+                }
+
+                const data = await res.json();
+
+                if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+                    console.error("❌ [Stage 1] Invalid API response - no choices:", data);
+                    throw new Error(`Invalid API response: ${JSON.stringify(data).substring(0, 200)}`);
+                }
+
+                strategyJsonRaw = data.choices[0]?.message?.content || "";
+            } catch (networkError: any) {
+                console.error("❌ [Stage 1] Network/Parse Error:", networkError.message);
+                throw new Error(`Network/API Error: ${networkError.message}`);
+            }
         }
 
         console.log("📝 [Stage 1] Raw Output:", strategyJsonRaw.substring(0, 100));
@@ -519,49 +734,79 @@ Output a valid JSON object with 'listing_generation_tasks' and 'aplus_generation
             let executionJsonRaw = "";
             let endpoint = agentBModel.baseUrl?.replace(/\/$/, '') || '';
 
-            // Ensure /v1/chat/completions is complete (especially for ModelScope)
-            if (!endpoint.endsWith('/chat/completions')) {
-                // Clean up and reconstruct
-                if (endpoint.includes('/chat/completions')) {
-                    endpoint = endpoint.split('/chat/completions')[0];
-                }
-                // Add /v1 for ModelScope if missing
+            // 🛡️ Ensure endpoint ends with /chat/completions if not already
+            if (!endpoint.includes('/chat/completions')) {
+                // If it's ModelScope but missing /v1, add it
                 if (endpoint.includes('modelscope.cn') && !endpoint.includes('/v1')) {
-                    endpoint = endpoint + '/v1';
+                    endpoint += '/v1';
                 }
-                endpoint = endpoint + '/chat/completions';
+                endpoint += '/chat/completions';
             }
 
-            console.log("📡 [Stage 2] Calling Agent B at:", endpoint);
+            // 🛡️ Build request body
+            const agentBRequestBody: any = {
+                model: agentBModel.modelId,
+                messages: [
+                    { role: "system", content: agentBInstruction + "\n\nCRITICAL: OUTPUT RAW JSON ONLY. NO MARKDOWN. NO ```json WRAPPERS." },
+                    { role: "user", content: agentBPrompt }
+                ],
+                temperature: 0.7,
+            };
 
-            const res = await fetch(getProxiedUrl(endpoint), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentBModel.apiKey}` },
-                body: JSON.stringify({
-                    model: agentBModel.modelId,
-                    messages: [
-                        { role: "system", content: agentBInstruction },
-                        { role: "user", content: agentBPrompt }
-                    ],
-                    temperature: 0.7,
-                    response_format: { type: "json_object" }
-                })
-            });
-            const data = await res.json();
+            // 🛡️ JSON Mode Logic: 
+            // DeepSeek supports JSON mode on OpenAI/DeepSeek API, but ModelScope's implementation is often flaky with it.
+            // So we ONLY enable it for official OpenAI, Azure, and DeepSeek Official API.
+            // We explicitly DISABLE it for ModelScope to avoid 400/500 errors.
+            const isModelScope = agentBModel.provider === 'modelscope' || endpoint.includes('modelscope.cn');
+            const isDeepSeekOfficial = agentBModel.provider === 'openai-compatible' && endpoint.includes('api.deepseek.com');
 
-            // 🛡️ Robust error handling for Agent B
-            if (!res.ok) {
-                const errMsg = data.error?.message || data.message || JSON.stringify(data);
-                console.error("❌ [Stage 2] Agent B API Error:", errMsg);
-                // Don't throw - just warn and fall back
-                console.warn("⚠️ Agent B API failed, will skip prompt translation");
-            } else if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
-                console.error("❌ [Stage 2] Invalid Agent B response - no choices:", data);
-                console.warn("⚠️ Agent B response invalid, will skip prompt translation");
-            } else {
-                executionJsonRaw = data.choices[0]?.message?.content || "{}";
-                console.log("📝 [Stage 2] Agent B Raw Output:", executionJsonRaw.substring(0, 200) + "...");
-                executionPrompts = safeJSONParse(executionJsonRaw);
+            const agentBSupportsJsonMode = !isModelScope && (
+                ['openai', 'azure', 'deepseek'].includes(agentBModel.provider?.toLowerCase() || '') ||
+                isDeepSeekOfficial
+            );
+
+            if (agentBSupportsJsonMode) {
+                agentBRequestBody.response_format = { type: "json_object" };
+            }
+
+            console.log(`📡 [Stage 2] Calling Agent B at: ${endpoint}`);
+            console.log(`   - Model: ${agentBModel.modelId}`);
+            console.log(`   - Provider: ${agentBModel.provider}`);
+            console.log(`   - JSON Mode: ${agentBSupportsJsonMode ? 'ENABLED' : 'DISABLED (Relies on Prompt)'}`);
+
+            try {
+                const res = await fetch(getProxiedUrl(endpoint), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentBModel.apiKey}` },
+                    body: JSON.stringify(agentBRequestBody)
+                });
+
+                // 🛡️ Handle non-OK responses or empty bodies gracefully
+                if (!res.ok) {
+                    let errMsg = `API Error (${res.status})`;
+                    try {
+                        const data = await res.json();
+                        errMsg = data.error?.message || data.message || JSON.stringify(data);
+                    } catch (e) {
+                        // Body might be empty or not JSON on 500
+                        errMsg += " (No response body)";
+                    }
+                    console.error("❌ [Stage 2] Agent B API Error:", errMsg);
+                    console.warn("⚠️ Agent B API failed, skipping prompt translation (Fallback active).");
+                } else {
+                    const data = await res.json();
+                    if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+                        console.error("❌ [Stage 2] Invalid Agent B response - no choices:", data);
+                        console.warn("⚠️ Agent B response invalid, skipping prompt translation.");
+                    } else {
+                        executionJsonRaw = data.choices[0]?.message?.content || "{}";
+                        console.log("📝 [Stage 2] Agent B Raw Output:", executionJsonRaw.substring(0, 200) + "...");
+                        executionPrompts = safeJSONParse(executionJsonRaw);
+                    }
+                }
+            } catch (networkError: any) {
+                console.error("❌ [Stage 2] Agent B Network/Parse Error:", networkError.message);
+                console.warn("⚠️ Agent B crashed, skipping prompt translation (Fallback active).");
             }
 
             if (!executionPrompts || (!executionPrompts.listing_generation_tasks && !executionPrompts.aplus_generation_tasks)) {
@@ -1589,12 +1834,26 @@ export const chatWithAI = async (
                     base = base.split('/chat/completions')[0];
                 }
 
-                // Ensure /v1 is present for ModelScope
-                if (endpoint.includes('modelscope.cn') && !base.includes('/v1')) {
-                    base = base + '/v1';
+                // 🛡️ Pre-process Endpoint for Provider Compatibility
+                // (Google is handled in the first if block, so this reached code was dead)
+
+                // Generic handling for others
+                if (!endpoint.endsWith('/chat/completions') && !endpoint.includes('generateContent') && !endpoint.includes('openai')) {
+                    if (endpoint.includes('modelscope.cn') && !endpoint.includes('/v1')) {
+                        endpoint += '/v1';
+                    }
+                    endpoint += '/chat/completions';
                 }
 
-                endpoint = base + '/chat/completions';
+                console.log(`📡 [Stage 1] Calling ${modelConfig.provider} at ${endpoint} (JSON mode: ${false})`); // Assuming supportsJsonMode is not available here, using false as placeholder
+
+                // 2. Wrap via Proxy (MUST use absolute path /api/proxy)
+                endpoint = getProxiedUrl(endpoint);
+            } else {
+                // For non-proxied endpoints, ensure /chat/completions
+                endpoint = endpoint.endsWith('/chat/completions')
+                    ? endpoint
+                    : `${endpoint.replace(/\/$/, '')}/chat/completions`;
             }
 
             console.log(`📡 [chatWithAI] Proxying ${modelConfig.provider} to: ${endpoint}`);

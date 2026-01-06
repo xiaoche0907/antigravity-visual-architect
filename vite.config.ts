@@ -95,8 +95,10 @@ function universalProxyPlugin(): Plugin {
     name: 'universal-proxy',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        // Support both specific universal path and the generic one matching Vercel
-        if (!req.url?.startsWith('/api/proxy')) {
+        // 🆕 FIXED: Only handle the generic proxy endpoint (exact match)
+        // This allows specific paths like /api/proxy/modelscope to pass through to Vite's server.proxy
+        const urlObj = new URL(req.url || '', 'http://localhost');
+        if (urlObj.pathname !== '/api/proxy') {
           return next();
         }
 

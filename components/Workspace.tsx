@@ -93,39 +93,134 @@ const Workspace: React.FC<WorkspaceProps> = ({
     /**
      * Extract the Chinese strategy/analysis text from an item, regardless of field name.
      * This function checks multiple candidate keys to handle different prompt versions.
+     * 🆕 Now handles nested objects like visual_composition: {layout, background, ...}
      */
+    // 🛡️ Robust Helper: Extract strategy text with case-insensitive fallback
     const getStrategyText = (item: any): string => {
         if (!item) return "No data";
 
-        // Priority list of keys to check (from v1.0 to v13.0+)
+        // Debug log to see what we're dealing with
+        // console.log("getStrategyText item:", item);
+
+        // 1. Check for standard keys (normalized or legacy)
         const candidates = [
-            item.visual_execution,       // v7.0
-            item.composition_guide,      // Newer versions
-            item.design_concept,         // Alternative
+            item.visual_execution,
+            item.visual_description,
+            item.composition_guide,
+            item.design_concept,
             item.design_layout_instruction,
-            item.visual_description,     // Generic
-            item.description,            // Legacy field
-            item.strategy_rationale_cn,  // Fallback CN
-            item.strategy_rationale,     // English fallback
-            item.content                 // Last resort
+            item.visual_guide,
+            item.layout_logic,
+            item.strategy_rationale_cn,
+            item.strategy_rationale,
+            item.description,
+            item.content
         ];
 
-        // Return the first one that exists and has content
-        const found = candidates.find(text => text && typeof text === 'string' && text.length > 0);
-        return found || "No analysis found (Key mismatch - check prompt version)";
+        const found = candidates.find(text => text && typeof text === 'string' && text.length > 0 && text !== 'No description');
+        if (found) return found;
+
+        // 2. 🆕 SKYSPER FORMAT: Handle nested visual_composition (Case Insensitive)
+        // Helper to find key case-insensitively
+        const getVal = (obj: any, key: string) => {
+            if (!obj || typeof obj !== 'object') return undefined;
+            const foundKey = Object.keys(obj).find(k => k.toLowerCase() === key.toLowerCase());
+            return foundKey ? obj[foundKey] : undefined;
+        };
+
+        const vc = getVal(item, 'visual_composition') || getVal(item, 'visual_layout');
+        if (vc) {
+            const parts = [];
+            const layout = getVal(vc, 'layout');
+            const view = getVal(vc, 'product_view') || getVal(vc, 'view');
+            const bg = getVal(vc, 'background') || getVal(vc, 'bg');
+            const lighting = getVal(vc, 'lighting');
+            const placement = getVal(vc, 'product_placement') || getVal(vc, 'placement') || getVal(vc, 'product_position');
+
+            if (layout) parts.push(`📐 布局: ${layout}`);
+            if (view) parts.push(`📷 视角: ${view}`);
+            if (bg) parts.push(`🎨 背景: ${bg}`);
+            if (lighting) parts.push(`💡 光线: ${lighting}`);
+            if (placement) parts.push(`📍 位置: ${placement}`);
+
+            if (parts.length > 0) return parts.join('\n');
+        }
+
+        // 3. 🆕 Handle nested typography_layout (Case Insensitive)
+        const tl = getVal(item, 'typography_layout') || getVal(item, 'text_layout');
+        if (tl) {
+            const parts = [];
+            const logo = getVal(tl, 'logo_position') || getVal(tl, 'logo') || getVal(tl, 'brand_logo');
+            const headline = getVal(tl, 'headline') || getVal(tl, 'main_headline');
+            const subtext = getVal(tl, 'subtext') || getVal(tl, 'sub_headline') || getVal(tl, 'body') || getVal(tl, 'text');
+            const icons = getVal(tl, 'icon_bar') || getVal(tl, 'icons') || getVal(tl, 'feature_icons');
+            const cta = getVal(tl, 'cta_element') || getVal(tl, 'cta');
+
+            if (logo) parts.push(`🏷️ Logo: ${logo}`);
+            if (headline) parts.push(`📝 标题: ${headline}`);
+            if (subtext) parts.push(`📋 副文案: ${subtext}`);
+            if (icons) parts.push(`🔘 图标栏: ${icons}`);
+            if (cta) parts.push(`🎯 CTA: ${cta}`);
+
+            if (parts.length > 0) return parts.join('\n');
+        }
+
+        // 4. Fallback search in all string properties (Last Resort)
+        for (const key of Object.keys(item)) {
+            if (['type', 'index', 'module_index', 'module_type'].includes(key)) continue; // Skip meta
+            const val = item[key];
+            if (typeof val === 'string' && val.length > 20) { // Assume long strings are content
+                return val;
+            }
+        }
+
+        return "No visual execution provided (Check console for details)";
+    };
+
+    /**
+     * Extract the English copy text from an item.
+     * 🆕 Handles nested english_copy object format
+     */
+    const getEnglishCopyText = (item: any): string => {
+        if (!item) return "...";
+
+        // Direct string format (legacy)
+        if (item.copywriting && typeof item.copywriting === 'string') {
+            return item.copywriting;
+        }
+        if (item.english_copy && typeof item.english_copy === 'string') {
+            return item.english_copy;
+        }
+
+        // 🆕 SKYSPER FORMAT: Handle nested english_copy object
+        if (item.english_copy && typeof item.english_copy === 'object') {
+            const ec = item.english_copy;
+            const parts = [];
+            if (ec.headline) parts.push(ec.headline);
+            if (ec.subheadline) parts.push(ec.subheadline);
+            if (ec.subtext) parts.push(ec.subtext);
+            if (ec.icon_labels && Array.isArray(ec.icon_labels)) {
+                parts.push(`[${ec.icon_labels.join(' | ')}]`);
+            }
+            if (parts.length > 0) return parts.join(' — ');
+        }
+
+        return "...";
     };
 
     /**
      * Extract the English prompt text from an execution task item.
      * This function checks multiple candidate keys for the image generation prompt.
+     * 🆕 Now handles nested prompt object format
+     * 🆕 Accepts optional fallback (e.g., Agent A's visual_execution) when Agent B fails
      */
-    const getPromptText = (item: any): string => {
-        if (!item) return "No prompt data";
+    const getPromptText = (item: any, fallback?: string): string => {
+        if (!item && fallback) return `[Agent A Fallback] ${fallback}`;
+        if (!item) return "No prompt data - Agent B may have failed";
 
-        // Priority list of prompt keys
+        // Priority list of direct prompt keys (flat string format)
         const candidates = [
             item.positive_prompt,        // Standard v7.0
-            item.prompt,                 // Generic
             item.image_prompt,           // Alternative
             item.generation_prompt,
             item.mj_prompt,              // Midjourney style
@@ -134,7 +229,27 @@ const Workspace: React.FC<WorkspaceProps> = ({
         ];
 
         const found = candidates.find(text => text && typeof text === 'string' && text.length > 0);
-        return found || "Generating...";
+        if (found) return found;
+
+        // 🆕 SKYSPER FORMAT: Handle nested prompt object
+        if (item.prompt && typeof item.prompt === 'object') {
+            const p = item.prompt;
+            const parts = [];
+            if (p.visual_description) parts.push(p.visual_description);
+            if (p.typography_layout) parts.push(p.typography_layout);
+            if (p.visual_style) parts.push(p.visual_style);
+            if (parts.length > 0) return parts.join(' | ');
+        }
+
+        // Handle if item.prompt is a direct string
+        if (item.prompt && typeof item.prompt === 'string') {
+            return item.prompt;
+        }
+
+        // Use fallback if provided
+        if (fallback) return `[Agent A] ${fallback}`;
+
+        return "Generating...";
     };
 
     /**
@@ -902,7 +1017,8 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                         </div>
                                                         <div>
                                                             <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">English Copy</span>
-                                                            <p className="text-xs text-white bg-[#131314] p-3 rounded-lg border border-[#3c4043] font-serif italic">"{String(img.copywriting || '...')}"</p>
+                                                            {/* 🛡️ Using universal adapter for nested english_copy objects */}
+                                                            <p className="text-xs text-white bg-[#131314] p-3 rounded-lg border border-[#3c4043] font-serif italic">"{getEnglishCopyText(img)}"</p>
                                                         </div>
                                                         <div className="mt-auto pt-4 border-t border-[#3c4043]">
                                                             <details className="group">
@@ -917,7 +1033,8 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                             img.id,
                                                                             'listing'
                                                                         );
-                                                                        const promptToShow = getPromptText(matchingTask);
+                                                                        // 🆕 Pass Agent A's visual_execution (stored as img.description) as fallback
+                                                                        const promptToShow = getPromptText(matchingTask, img.description);
                                                                         return (
                                                                             <>
                                                                                 <p className="text-[10px] font-mono text-gray-500 bg-black p-2 pr-16 rounded selectable">{promptToShow}</p>
@@ -1069,7 +1186,8 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                         </div>
                                                         <div>
                                                             <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">视觉指导 (Visual Guidance)</span>
-                                                            <p className="text-xs text-white bg-[#131314] p-3 rounded-lg border border-[#3c4043]">{String(m.visualGuidance || '...')}</p>
+                                                            {/* 🛡️ Using universal adapter for nested objects */}
+                                                            <p className="text-xs text-white bg-[#131314] p-3 rounded-lg border border-[#3c4043]">{getEnglishCopyText(m) || String(m.visualGuidance || '...')}</p>
                                                         </div>
                                                         <div className="mt-auto pt-4 border-t border-[#3c4043]">
                                                             <details className="group">
@@ -1084,7 +1202,8 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                             m.id,
                                                                             'aplus'
                                                                         );
-                                                                        const promptToShow = getPromptText(matchingTask);
+                                                                        // 🆕 Pass Agent A's visual_description (stored as m.visualGuidance) as fallback
+                                                                        const promptToShow = getPromptText(matchingTask, m.visualGuidance);
                                                                         return (
                                                                             <>
                                                                                 <p className="text-[10px] font-mono text-gray-500 bg-black p-2 pr-16 rounded selectable">{promptToShow}</p>
