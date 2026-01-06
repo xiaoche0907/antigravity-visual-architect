@@ -861,7 +861,9 @@ Output a valid JSON object with 'listing_generation_tasks' and 'aplus_generation
                 id: item.index,
                 type: item.type,
                 description: item.visual_execution, // Correctly map Visual Execution to description
-                visualPrompt: exec?.positive_prompt || item.visual_execution, // Use Agent B prompt if available
+                visualPrompt: exec?.positive_prompt
+                    ? exec.positive_prompt
+                    : `[FALLBACK PROMPT] /imagine prompt: ${item.visual_execution?.replace(/^\[|\]$/g, '')} --ar 3:4 --styled`, // Clean up brackets if present
                 copywriting: item.english_copy
             };
         });
