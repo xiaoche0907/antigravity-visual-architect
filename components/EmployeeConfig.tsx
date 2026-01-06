@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AppConfig } from '../types';
+import { AppConfig, PromptPreset } from '../types';
 import { ModelConfig } from '../types/models';
 import { DEFAULT_SYSTEM_INSTRUCTION, PROMPT_ENGINEER_SYSTEM_INSTRUCTION } from '../constants';
 
@@ -18,6 +18,11 @@ interface EmployeeConfigProps {
 
 const LOCALSTORAGE_KEY = 'custom_amazon_expert_prompt';
 const LOCALSTORAGE_PROMPT_ENGINEER_KEY = 'custom_prompt_engineer_instruction';
+// 新增预设存储键
+const LOCALSTORAGE_BRAIN_PRESETS_KEY = 'brain_prompt_presets';
+const LOCALSTORAGE_PE_PRESETS_KEY = 'prompt_engineer_presets';
+const LOCALSTORAGE_SELECTED_BRAIN_PRESET_KEY = 'selected_brain_preset_id';
+const LOCALSTORAGE_SELECTED_PE_PRESET_KEY = 'selected_pe_preset_id';
 
 const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
     config,
@@ -41,12 +46,73 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
     // 视觉技术总监的系统指令 (Local State)
     const [promptEngineerInstruction, setPromptEngineerInstruction] = useState<string>('');
 
+    // ========== 预设管理状态 ==========
+    const [brainPresets, setBrainPresets] = useState<PromptPreset[]>([]);
+    const [pePresets, setPePresets] = useState<PromptPreset[]>([]);
+    const [selectedBrainPresetId, setSelectedBrainPresetId] = useState<string>('');
+    const [selectedPePresetId, setSelectedPePresetId] = useState<string>('');
+    const [showBrainPresetInput, setShowBrainPresetInput] = useState(false);
+    const [showPePresetInput, setShowPePresetInput] = useState(false);
+    const [newBrainPresetName, setNewBrainPresetName] = useState('');
+    const [newPePresetName, setNewPePresetName] = useState('');
+
+    // 生成默认预设
+    const createDefaultBrainPreset = (): PromptPreset => ({
+        id: 'default-brain',
+        name: '📋 默认模板 (Skysper)',
+        content: DEFAULT_SYSTEM_INSTRUCTION,
+        isDefault: true,
+        createdAt: Date.now()
+    });
+
+    const createDefaultPePreset = (): PromptPreset => ({
+        id: 'default-pe',
+        name: '📋 默认模板 (Nanobanana)',
+        content: PROMPT_ENGINEER_SYSTEM_INSTRUCTION,
+        isDefault: true,
+        createdAt: Date.now()
+    });
+
     // 过滤可用的模型配置
     const enabledTextModels = modelConfigs.filter(m => m.category === 'text' && m.isEnabled);
     const enabledImageModels = modelConfigs.filter(m => m.category === 'image' && m.isEnabled);
 
     // 组件加载时：优先从 localStorage 读取，若为空则使用默认模板
     useEffect(() => {
+        // ===== 加载预设列表 =====
+        const savedBrainPresets = localStorage.getItem(LOCALSTORAGE_BRAIN_PRESETS_KEY);
+        const savedPePresets = localStorage.getItem(LOCALSTORAGE_PE_PRESETS_KEY);
+        
+        // 初始化大脑预设列表
+        if (savedBrainPresets) {
+            const parsed = JSON.parse(savedBrainPresets) as PromptPreset[];
+            // 确保默认预设存在
+            if (!parsed.find(p => p.id === 'default-brain')) {
+                parsed.unshift(createDefaultBrainPreset());
+            }
+            setBrainPresets(parsed);
+        } else {
+            setBrainPresets([createDefaultBrainPreset()]);
+        }
+
+        // 初始化PE预设列表
+        if (savedPePresets) {
+            const parsed = JSON.parse(savedPePresets) as PromptPreset[];
+            if (!parsed.find(p => p.id === 'default-pe')) {
+                parsed.unshift(createDefaultPePreset());
+            }
+            setPePresets(parsed);
+        } else {
+            setPePresets([createDefaultPePreset()]);
+        }
+
+        // 加载选中的预设ID
+        const savedBrainPresetId = localStorage.getItem(LOCALSTORAGE_SELECTED_BRAIN_PRESET_KEY);
+        const savedPePresetId = localStorage.getItem(LOCALSTORAGE_SELECTED_PE_PRESET_KEY);
+        if (savedBrainPresetId) setSelectedBrainPresetId(savedBrainPresetId);
+        if (savedPePresetId) setSelectedPePresetId(savedPePresetId);
+
+        // ===== 原有逻辑：加载当前指令 =====
         const savedPrompt = localStorage.getItem(LOCALSTORAGE_KEY);
         if (savedPrompt) {
             setConfig(prev => ({
@@ -160,6 +226,133 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
         showToast('🔄 已恢复视觉技术总监默认指令');
     };
 
+    // ========== 预设管理函数 ==========
+    
+    // 保存预设列表到 localStorage
+    const saveBrainPresetsToStorage = (presets: PromptPreset[]) => {
+        localStorage.setItem(LOCALSTORAGE_BRAIN_PRESETS_KEY, JSON.stringify(presets));
+    };
+
+    const savePePresetsToStorage = (presets: PromptPreset[]) => {
+        localStorage.setItem(LOCALSTORAGE_PE_PRESETS_KEY, JSON.stringify(presets));
+    };
+
+    // 保存当前指令为新预设 (大脑)
+    const saveBrainAsPreset = () => {
+        if (!newBrainPresetName.trim()) {
+            showToast('⚠️ 请输入预设名称');
+            return;
+        }
+        const newPreset: PromptPreset = {
+            id: `brain-${Date.now()}`,
+            name: newBrainPresetName.trim(),
+            content: config.brain.systemInstruction,
+            isDefault: false,
+            createdAt: Date.now()
+        };
+        const updatedPresets = [...brainPresets, newPreset];
+        setBrainPresets(updatedPresets);
+        saveBrainPresetsToStorage(updatedPresets);
+        setSelectedBrainPresetId(newPreset.id);
+        localStorage.setItem(LOCALSTORAGE_SELECTED_BRAIN_PRESET_KEY, newPreset.id);
+        setNewBrainPresetName('');
+        setShowBrainPresetInput(false);
+        showToast(`✅ 已保存预设: ${newPreset.name}`);
+    };
+
+    // 保存当前指令为新预设 (PE)
+    const savePeAsPreset = () => {
+        if (!newPePresetName.trim()) {
+            showToast('⚠️ 请输入预设名称');
+            return;
+        }
+        const newPreset: PromptPreset = {
+            id: `pe-${Date.now()}`,
+            name: newPePresetName.trim(),
+            content: promptEngineerInstruction,
+            isDefault: false,
+            createdAt: Date.now()
+        };
+        const updatedPresets = [...pePresets, newPreset];
+        setPePresets(updatedPresets);
+        savePePresetsToStorage(updatedPresets);
+        setSelectedPePresetId(newPreset.id);
+        localStorage.setItem(LOCALSTORAGE_SELECTED_PE_PRESET_KEY, newPreset.id);
+        setNewPePresetName('');
+        setShowPePresetInput(false);
+        showToast(`✅ 已保存预设: ${newPreset.name}`);
+    };
+
+    // 切换预设 (大脑)
+    const selectBrainPreset = (presetId: string) => {
+        if (!presetId) {
+            // 选择了空选项，不做任何操作
+            return;
+        }
+        const preset = brainPresets.find(p => p.id === presetId);
+        if (preset) {
+            handleBrainChange('systemInstruction', preset.content);
+            localStorage.setItem(LOCALSTORAGE_KEY, preset.content);
+            setSelectedBrainPresetId(presetId);
+            localStorage.setItem(LOCALSTORAGE_SELECTED_BRAIN_PRESET_KEY, presetId);
+            showToast(`📋 已切换到: ${preset.name}`);
+        }
+    };
+
+    // 切换预设 (PE)
+    const selectPePreset = (presetId: string) => {
+        if (!presetId) {
+            // 选择了空选项，不做任何操作
+            return;
+        }
+        const preset = pePresets.find(p => p.id === presetId);
+        if (preset) {
+            setPromptEngineerInstruction(preset.content);
+            localStorage.setItem(LOCALSTORAGE_PROMPT_ENGINEER_KEY, preset.content);
+            setSelectedPePresetId(presetId);
+            localStorage.setItem(LOCALSTORAGE_SELECTED_PE_PRESET_KEY, presetId);
+            showToast(`📋 已切换到: ${preset.name}`);
+        }
+    };
+
+    // 删除预设 (大脑) - 直接删除，不弹确认框
+    const deleteBrainPreset = (presetId: string) => {
+        const preset = brainPresets.find(p => p.id === presetId);
+        if (!preset) {
+            showToast('⚠️ 预设不存在');
+            return;
+        }
+        if (preset.isDefault) {
+            showToast('⚠️ 无法删除默认预设');
+            return;
+        }
+        const updatedPresets = brainPresets.filter(p => p.id !== presetId);
+        setBrainPresets(updatedPresets);
+        saveBrainPresetsToStorage(updatedPresets);
+        setSelectedBrainPresetId('');
+        localStorage.removeItem(LOCALSTORAGE_SELECTED_BRAIN_PRESET_KEY);
+        showToast(`🗑️ 已删除预设: ${preset.name}`);
+    };
+
+    // 删除预设 (PE) - 直接删除，不弹确认框
+    const deletePePreset = (presetId: string) => {
+        const preset = pePresets.find(p => p.id === presetId);
+        if (!preset) {
+            showToast('⚠️ 预设不存在');
+            return;
+        }
+        if (preset.isDefault) {
+            showToast('⚠️ 无法删除默认预设');
+            return;
+        }
+        const updatedPresets = pePresets.filter(p => p.id !== presetId);
+        setPePresets(updatedPresets);
+        savePePresetsToStorage(updatedPresets);
+        setSelectedPePresetId('');
+        localStorage.removeItem(LOCALSTORAGE_SELECTED_PE_PRESET_KEY);
+        showToast(`🗑️ 已删除预设: ${preset.name}`);
+    };
+
     return (
         <div className="flex-1 bg-[#0b0b0b] p-10 animate-in fade-in slide-in-from-bottom-8 overflow-y-auto custom-scrollbar flex justify-center relative">
             {/* Simple Toast Notification */}
@@ -259,6 +452,77 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
                                         </button>
                                     </div>
                                 </div>
+
+                                {/* ========== 预设选择器 ========== */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <select
+                                        value={selectedBrainPresetId}
+                                        onChange={(e) => selectBrainPreset(e.target.value)}
+                                        className="flex-1 min-w-[200px] bg-[#131314] border border-[#3c4043] rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-purple-500 outline-none"
+                                    >
+                                        <option value="">-- 选择预设 --</option>
+                                        {brainPresets.map(preset => (
+                                            <option key={preset.id} value={preset.id}>
+                                                {preset.name} {preset.isDefault ? '' : '(自定义)'}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    
+                                    {/* 删除预设按钮 */}
+                                    {selectedBrainPresetId && !brainPresets.find(p => p.id === selectedBrainPresetId)?.isDefault && (
+                                        <button
+                                            onClick={() => deleteBrainPreset(selectedBrainPresetId)}
+                                            className="px-2 py-2 bg-red-500/10 text-red-400 rounded-lg border border-red-500/20 hover:bg-red-500/20 transition-colors text-xs"
+                                            title="删除当前预设"
+                                        >
+                                            🗑️
+                                        </button>
+                                    )}
+                                    
+                                    {/* 保存为新预设按钮 */}
+                                    {!showBrainPresetInput ? (
+                                        <button
+                                            onClick={() => setShowBrainPresetInput(true)}
+                                            className="px-3 py-2 bg-purple-500/10 text-purple-300 rounded-lg border border-purple-500/20 hover:bg-purple-500/20 transition-colors text-xs font-semibold whitespace-nowrap"
+                                        >
+                                            💾 保存为预设
+                                        </button>
+                                    ) : (
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="text"
+                                                value={newBrainPresetName}
+                                                onChange={(e) => setNewBrainPresetName(e.target.value)}
+                                                placeholder="输入预设名称..."
+                                                className="w-48 bg-[#131314] border-2 border-purple-500/50 rounded-lg px-3 py-2 text-xs text-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none placeholder:text-gray-500"
+                                                autoFocus
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') saveBrainAsPreset();
+                                                    if (e.key === 'Escape') {
+                                                        setShowBrainPresetInput(false);
+                                                        setNewBrainPresetName('');
+                                                    }
+                                                }}
+                                            />
+                                            <button
+                                                onClick={saveBrainAsPreset}
+                                                className="px-2 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors text-xs"
+                                            >
+                                                ✓
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setShowBrainPresetInput(false);
+                                                    setNewBrainPresetName('');
+                                                }}
+                                                className="px-2 py-2 bg-gray-500/20 text-gray-400 rounded-lg hover:bg-gray-500/30 transition-colors text-xs"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <textarea
                                     id="system-prompt-area"
                                     value={config.brain.systemInstruction}
@@ -348,6 +612,77 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
                                         </button>
                                     </div>
                                 </div>
+
+                                {/* ========== PE 预设选择器 ========== */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <select
+                                        value={selectedPePresetId}
+                                        onChange={(e) => selectPePreset(e.target.value)}
+                                        className="flex-1 min-w-[200px] bg-[#131314] border border-[#3c4043] rounded-lg px-3 py-2 text-xs text-white focus:ring-1 focus:ring-cyan-500 outline-none"
+                                    >
+                                        <option value="">-- 选择预设 --</option>
+                                        {pePresets.map(preset => (
+                                            <option key={preset.id} value={preset.id}>
+                                                {preset.name} {preset.isDefault ? '' : '(自定义)'}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    
+                                    {/* 删除预设按钮 */}
+                                    {selectedPePresetId && !pePresets.find(p => p.id === selectedPePresetId)?.isDefault && (
+                                        <button
+                                            onClick={() => deletePePreset(selectedPePresetId)}
+                                            className="px-2 py-2 bg-red-500/10 text-red-400 rounded-lg border border-red-500/20 hover:bg-red-500/20 transition-colors text-xs"
+                                            title="删除当前预设"
+                                        >
+                                            🗑️
+                                        </button>
+                                    )}
+                                    
+                                    {/* 保存为新预设按钮 */}
+                                    {!showPePresetInput ? (
+                                        <button
+                                            onClick={() => setShowPePresetInput(true)}
+                                            className="px-3 py-2 bg-cyan-500/10 text-cyan-300 rounded-lg border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors text-xs font-semibold whitespace-nowrap"
+                                        >
+                                            💾 保存为预设
+                                        </button>
+                                    ) : (
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="text"
+                                                value={newPePresetName}
+                                                onChange={(e) => setNewPePresetName(e.target.value)}
+                                                placeholder="输入预设名称..."
+                                                className="w-48 bg-[#131314] border-2 border-cyan-500/50 rounded-lg px-3 py-2 text-xs text-white focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none placeholder:text-gray-500"
+                                                autoFocus
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') savePeAsPreset();
+                                                    if (e.key === 'Escape') {
+                                                        setShowPePresetInput(false);
+                                                        setNewPePresetName('');
+                                                    }
+                                                }}
+                                            />
+                                            <button
+                                                onClick={savePeAsPreset}
+                                                className="px-2 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors text-xs"
+                                            >
+                                                ✓
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setShowPePresetInput(false);
+                                                    setNewPePresetName('');
+                                                }}
+                                                className="px-2 py-2 bg-gray-500/20 text-gray-400 rounded-lg hover:bg-gray-500/30 transition-colors text-xs"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <textarea
                                     value={promptEngineerInstruction}
                                     onChange={(e) => setPromptEngineerInstruction(e.target.value)}

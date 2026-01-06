@@ -1,6 +1,6 @@
 # 🚀 Amazon A9 Visual Architect (AntiGravity)
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg) ![React](https://img.shields.io/badge/React-18-blue) ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue) ![Version](https://img.shields.io/badge/version-7.1-green)
+![License](https://img.shields.io/badge/license-MIT-blue.svg) ![React](https://img.shields.io/badge/React-18-blue) ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue) ![Version](https://img.shields.io/badge/version-7.2-green)
 
 > **专为亚马逊跨境电商打造的 AI 视觉与策略生成引擎。**
 >
@@ -47,6 +47,15 @@
 - **极简 UI**: 黑色深色模式，沉浸式体验。
 - **Visual DNA 面板**: 可视化展示品牌色 (Hex Swatches) 与光影策略。
 - **Code Block 预览**: 实时的 Agent B 提示词预览，支持一键复制。
+
+### 💾 岗位指令预设管理 (v7.2 New!)
+
+为"首席策略官"和"视觉技术总监"添加了**预设管理系统**：
+
+- **保存预设**: 将当前岗位指令保存为自定义预设，支持自定义名称
+- **切换预设**: 从下拉框快速切换不同的指令风格
+- **删除预设**: 一键删除不需要的自定义预设
+- **持久化存储**: 预设数据自动保存到本地，刷新不丢失
 
 ## 🛠️ 技术栈 (Tech Stack)
 

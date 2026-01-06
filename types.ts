@@ -29,12 +29,12 @@ export interface AppConfig {
   };
   visual: {
     provider:
-    | "modelscope"
-    | "google"
-    | "openai"
-    | "custom"
-    | "gemini"
-    | "grsai";
+      | "modelscope"
+      | "google"
+      | "openai"
+      | "custom"
+      | "gemini"
+      | "grsai";
     model: string;
     baseUrl: string;
     useSameKeyAsBrain: boolean;
@@ -111,6 +111,18 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+/**
+ * 岗位指令预设
+ * 用于保存和切换不同的系统提示词配置
+ */
+export interface PromptPreset {
+  id: string; // 唯一ID
+  name: string; // 用户自定义名称
+  content: string; // 指令内容
+  isDefault?: boolean; // 是否为系统默认预设（不可删除）
+  createdAt: number; // 创建时间
+}
+
 // === New V7.0 Dual-Agent Interfaces ===
 
 export interface VisualStrategy {
@@ -154,7 +166,7 @@ export interface MarketingStrategy {
   analysis: string; // Legacy field, now populated from visual_dna_analysis summary
   secondaryImages: SecondaryImagePlan[]; // Legacy field
   aPlusContent: APlusModulePlan[]; // Legacy field
-  
+
   // New Structured Data
   visualStrategy?: VisualStrategy;
   executionPrompts?: ExecutionPrompts;
