@@ -642,104 +642,101 @@ export const generateMarketingStrategy = async (
                 throw new Error(`Network/API Error: ${networkError.message}`);
             }
         }
-    } catch (networkError: any) {
-        console.error("❌ [Stage 1] Network/Parse Error:", networkError.message);
-        throw new Error(`Network/API Error: ${networkError.message}`);
-    }
 
-    console.log("📝 [Stage 1] Raw Output:", strategyJsonRaw.substring(0, 100));
-    let visualStrategy = safeJSONParse(strategyJsonRaw);
 
-    // 🛡️ Apply Universal Normalizer to standardize field names
-    visualStrategy = normalizeAgentOutput(visualStrategy);
+        console.log("📝 [Stage 1] Raw Output:", strategyJsonRaw.substring(0, 100));
+        let visualStrategy = safeJSONParse(strategyJsonRaw);
 
-    // 🛡️ Detailed logging for debugging
-    console.log("📊 [Stage 1] Normalized visualStrategy:", JSON.stringify(visualStrategy, null, 2).substring(0, 500));
-    console.log("📊 [Stage 1] visual_dna_analysis:", visualStrategy?.visual_dna_analysis);
-    console.log("📊 [Stage 1] listing_image_plan count:", visualStrategy?.listing_image_plan?.length || 0);
+        // 🛡️ Apply Universal Normalizer to standardize field names
+        visualStrategy = normalizeAgentOutput(visualStrategy);
 
-    // 🛡️ FALLBACK: If parsing failed or structure is invalid, create a usable error state
-    if (!visualStrategy) {
-        console.error("❌ [Stage 1] JSON parsing completely failed. Raw:", strategyJsonRaw.substring(0, 500));
-        visualStrategy = {
-            visual_dna_analysis: {
-                brand_tone: "⚠️ Parsing Error - Model output could not be parsed. Check console for details.",
-                color_palette: "#FF6B6B",
-                lighting_strategy: "Please try again with a different model or check the system prompt."
-            },
-            listing_image_plan: []
-        };
-    } else if (!visualStrategy.visual_dna_analysis) {
-        console.error("❌ [Stage 1] Missing visual_dna_analysis. Keys found:", Object.keys(visualStrategy));
-        // Try to extract from alternative field names (key-agnostic)
-        const altKeys = ['analysis', 'strategy', 'visual_strategy', 'dna_analysis', 'brand_analysis'];
-        let found = null;
-        for (const key of altKeys) {
-            if (visualStrategy[key]) {
-                found = visualStrategy[key];
-                console.log("🔄 [Stage 1] Found alternative key:", key);
-                break;
+        // 🛡️ Detailed logging for debugging
+        console.log("📊 [Stage 1] Normalized visualStrategy:", JSON.stringify(visualStrategy, null, 2).substring(0, 500));
+        console.log("📊 [Stage 1] visual_dna_analysis:", visualStrategy?.visual_dna_analysis);
+        console.log("📊 [Stage 1] listing_image_plan count:", visualStrategy?.listing_image_plan?.length || 0);
+
+        // 🛡️ FALLBACK: If parsing failed or structure is invalid, create a usable error state
+        if (!visualStrategy) {
+            console.error("❌ [Stage 1] JSON parsing completely failed. Raw:", strategyJsonRaw.substring(0, 500));
+            visualStrategy = {
+                visual_dna_analysis: {
+                    brand_tone: "⚠️ Parsing Error - Model output could not be parsed. Check console for details.",
+                    color_palette: "#FF6B6B",
+                    lighting_strategy: "Please try again with a different model or check the system prompt."
+                },
+                listing_image_plan: []
+            };
+        } else if (!visualStrategy.visual_dna_analysis) {
+            console.error("❌ [Stage 1] Missing visual_dna_analysis. Keys found:", Object.keys(visualStrategy));
+            // Try to extract from alternative field names (key-agnostic)
+            const altKeys = ['analysis', 'strategy', 'visual_strategy', 'dna_analysis', 'brand_analysis'];
+            let found = null;
+            for (const key of altKeys) {
+                if (visualStrategy[key]) {
+                    found = visualStrategy[key];
+                    console.log("🔄 [Stage 1] Found alternative key:", key);
+                    break;
+                }
+            }
+            if (found) {
+                visualStrategy.visual_dna_analysis = found;
+            } else {
+                // Create placeholder so UI doesn't crash
+                visualStrategy.visual_dna_analysis = {
+                    brand_tone: "⚠️ Model output missing required 'visual_dna_analysis'. Check system prompt.",
+                    color_palette: "#FFA500",
+                    lighting_strategy: "Model returned: " + JSON.stringify(visualStrategy).substring(0, 200)
+                };
             }
         }
-        if (found) {
-            visualStrategy.visual_dna_analysis = found;
-        } else {
-            // Create placeholder so UI doesn't crash
-            visualStrategy.visual_dna_analysis = {
-                brand_tone: "⚠️ Model output missing required 'visual_dna_analysis'. Check system prompt.",
-                color_palette: "#FFA500",
-                lighting_strategy: "Model returned: " + JSON.stringify(visualStrategy).substring(0, 200)
-            };
+
+        // 🛡️ SMART DEFAULTS: If model output is garbage, provide usable defaults instead of errors
+        const dna = visualStrategy.visual_dna_analysis;
+        const isGarbage = (val: any) => !val || val === '///' || val === '--' || val === '...' || (typeof val === 'string' && val.length < 2);
+
+        if (isGarbage(dna.brand_tone)) {
+            console.warn("⚠️ [Stage 1] Garbage brand_tone detected. Using Smart Default.");
+            dna.brand_tone = "Modern & Professional (Auto-Default)";
         }
-    }
+        if (isGarbage(dna.lighting_strategy)) {
+            console.warn("⚠️ [Stage 1] Garbage lighting_strategy detected. Using Smart Default.");
+            dna.lighting_strategy = "Soft Studio Lighting, Clean & Minimalist (Auto-Default)";
+        }
+        if (isGarbage(dna.color_palette) || dna.color_palette === "#FFA500") {
+            dna.color_palette = "#2C3E50"; // Dark Blue/Grey Professional
+        }
 
-    // 🛡️ SMART DEFAULTS: If model output is garbage, provide usable defaults instead of errors
-    const dna = visualStrategy.visual_dna_analysis;
-    const isGarbage = (val: any) => !val || val === '///' || val === '--' || val === '...' || (typeof val === 'string' && val.length < 2);
+        // 🛡️ CRITICAL FALLBACK: If listing listing_image_plan is empty, generate a generic plan
+        if (!visualStrategy.listing_image_plan || visualStrategy.listing_image_plan.length === 0) {
+            console.warn("⚠️ [Stage 1] No listing image plan found. Generating Generic Plan.");
+            visualStrategy.listing_image_plan = [
+                { index: 1, type: "Main_Image", visual_execution: "Clean white background, high angle shot showing entire product, studio lighting", strategy_rationale: "Standard Main Image" },
+                { index: 2, type: "Lifestyle", visual_execution: "Product in use in a modern living room setting, soft natural light", strategy_rationale: "Usage Context" },
+                { index: 3, type: "Detail_Shot", visual_execution: "Close-up textural shot of the material, macro lens, sharp focus", strategy_rationale: "Material Quality" },
+                { index: 4, type: "Feature_1", visual_execution: "Demonstrating key feature mechanism, clear informative angle", strategy_rationale: "Feature Highlight" },
+                { index: 5, type: "Scale_Ref", visual_execution: "Product next to everyday objects for scale reference", strategy_rationale: "Size Perception" },
+                { index: 6, type: "Packaging", visual_execution: "Product with premium packaging arrangement", strategy_rationale: "Unboxing Experience" }
+            ];
+        }
 
-    if (isGarbage(dna.brand_tone)) {
-        console.warn("⚠️ [Stage 1] Garbage brand_tone detected. Using Smart Default.");
-        dna.brand_tone = "Modern & Professional (Auto-Default)";
-    }
-    if (isGarbage(dna.lighting_strategy)) {
-        console.warn("⚠️ [Stage 1] Garbage lighting_strategy detected. Using Smart Default.");
-        dna.lighting_strategy = "Soft Studio Lighting, Clean & Minimalist (Auto-Default)";
-    }
-    if (isGarbage(dna.color_palette) || dna.color_palette === "#FFA500") {
-        dna.color_palette = "#2C3E50"; // Dark Blue/Grey Professional
-    }
+        // ==========================================
+        // 🔵 STAGE 2: VISUAL DIRECTOR (AGENT B)
+        // ==========================================
+        reportProgress('translating', '🎨 (Agent B) Visual Director is crafting execution prompts...');
 
-    // 🛡️ CRITICAL FALLBACK: If listing listing_image_plan is empty, generate a generic plan
-    if (!visualStrategy.listing_image_plan || visualStrategy.listing_image_plan.length === 0) {
-        console.warn("⚠️ [Stage 1] No listing image plan found. Generating Generic Plan.");
-        visualStrategy.listing_image_plan = [
-            { index: 1, type: "Main_Image", visual_execution: "Clean white background, high angle shot showing entire product, studio lighting", strategy_rationale: "Standard Main Image" },
-            { index: 2, type: "Lifestyle", visual_execution: "Product in use in a modern living room setting, soft natural light", strategy_rationale: "Usage Context" },
-            { index: 3, type: "Detail_Shot", visual_execution: "Close-up textural shot of the material, macro lens, sharp focus", strategy_rationale: "Material Quality" },
-            { index: 4, type: "Feature_1", visual_execution: "Demonstrating key feature mechanism, clear informative angle", strategy_rationale: "Feature Highlight" },
-            { index: 5, type: "Scale_Ref", visual_execution: "Product next to everyday objects for scale reference", strategy_rationale: "Size Perception" },
-            { index: 6, type: "Packaging", visual_execution: "Product with premium packaging arrangement", strategy_rationale: "Unboxing Experience" }
-        ];
-    }
+        let executionPrompts = null;
+        const agentBModel = promptEngineerConfig?.model || textModel; // Use specific model or fallback to main
+        const agentBInstruction = promptEngineerConfig?.instruction || ""; // Should be V7.0 Prompt Engineer Prompt
 
-    // ==========================================
-    // 🔵 STAGE 2: VISUAL DIRECTOR (AGENT B)
-    // ==========================================
-    reportProgress('translating', '🎨 (Agent B) Visual Director is crafting execution prompts...');
+        // 🚨 CRITICAL: Agent B MUST receive Agent A's output as context
+        // Convert the entire visualStrategy to a JSON string to pass as context
+        const agentAOutputString = JSON.stringify(visualStrategy, null, 2);
+        console.log("📦 [Stage 2] Agent A Output (Context for B):", agentAOutputString.substring(0, 300) + "...");
 
-    let executionPrompts = null;
-    const agentBModel = promptEngineerConfig?.model || textModel; // Use specific model or fallback to main
-    const agentBInstruction = promptEngineerConfig?.instruction || ""; // Should be V7.0 Prompt Engineer Prompt
-
-    // 🚨 CRITICAL: Agent B MUST receive Agent A's output as context
-    // Convert the entire visualStrategy to a JSON string to pass as context
-    const agentAOutputString = JSON.stringify(visualStrategy, null, 2);
-    console.log("📦 [Stage 2] Agent A Output (Context for B):", agentAOutputString.substring(0, 300) + "...");
-
-    if (agentBModel && agentBInstruction) {
-        // 🛡️ KEY-AGNOSTIC: Pass ENTIRE Agent A output, let Agent B (LLM) find the right fields
-        // This makes the pipeline robust against field name changes in System Prompts
-        const agentBPrompt = `You are the Visual Technical Director (Prompt Engineer). 
+        if (agentBModel && agentBInstruction) {
+            // 🛡️ KEY-AGNOSTIC: Pass ENTIRE Agent A output, let Agent B (LLM) find the right fields
+            // This makes the pipeline robust against field name changes in System Prompts
+            const agentBPrompt = `You are the Visual Technical Director (Prompt Engineer). 
 Your task is to convert the following Visual Strategy JSON into executable image generation prompts.
 
 === STRATEGY JSON FROM AGENT A (FULL OBJECT) ===
@@ -763,148 +760,148 @@ FOR EACH visual instruction in 'premium_aplus_plan' (or similar), generate:
 
 Output a valid JSON object with 'listing_generation_tasks' and 'aplus_generation_tasks' arrays.`;
 
-        // Call Agent B
-        let executionJsonRaw = "";
-        let endpoint = agentBModel.baseUrl?.replace(/\/$/, '') || '';
+            // Call Agent B
+            let executionJsonRaw = "";
+            let endpoint = agentBModel.baseUrl?.replace(/\/$/, '') || '';
 
-        // 🛡️ Ensure endpoint ends with /chat/completions if not already
-        if (!endpoint.includes('/chat/completions')) {
-            // If it's ModelScope but missing /v1, add it
-            if (endpoint.includes('modelscope.cn') && !endpoint.includes('/v1')) {
-                endpoint += '/v1';
-            }
-            endpoint += '/chat/completions';
-        }
-
-        // 🛡️ Build request body
-        const agentBRequestBody: any = {
-            model: agentBModel.modelId,
-            messages: [
-                { role: "system", content: agentBInstruction + "\n\nCRITICAL: OUTPUT RAW JSON ONLY. NO MARKDOWN. NO ```json WRAPPERS." },
-                { role: "user", content: agentBPrompt }
-            ],
-            temperature: 0.7,
-        };
-
-        // 🛡️ JSON Mode Logic: 
-        // DeepSeek supports JSON mode on OpenAI/DeepSeek API, but ModelScope's implementation is often flaky with it.
-        // So we ONLY enable it for official OpenAI, Azure, and DeepSeek Official API.
-        // We explicitly DISABLE it for ModelScope to avoid 400/500 errors.
-        const isModelScope = agentBModel.provider === 'modelscope' || endpoint.includes('modelscope.cn');
-        const isDeepSeekOfficial = agentBModel.provider === 'openai-compatible' && endpoint.includes('api.deepseek.com');
-
-        const agentBSupportsJsonMode = !isModelScope && (
-            ['openai', 'azure', 'deepseek'].includes(agentBModel.provider?.toLowerCase() || '') ||
-            isDeepSeekOfficial
-        );
-
-        if (agentBSupportsJsonMode) {
-            agentBRequestBody.response_format = { type: "json_object" };
-        }
-
-        console.log(`📡 [Stage 2] Calling Agent B at: ${endpoint}`);
-        console.log(`   - Model: ${agentBModel.modelId}`);
-        console.log(`   - Provider: ${agentBModel.provider}`);
-        console.log(`   - JSON Mode: ${agentBSupportsJsonMode ? 'ENABLED' : 'DISABLED (Relies on Prompt)'}`);
-
-        try {
-            // 🆕 Use smartFetch instead of direct fetch
-            const res = await smartFetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentBModel.apiKey} ` },
-                body: JSON.stringify(agentBRequestBody)
-            });
-
-            // 🛡️ Handle non-OK responses or empty bodies gracefully
-            if (!res.ok) {
-                let errMsg = `API Error(${res.status})`;
-                try {
-                    const data = await res.json();
-                    errMsg = data.error?.message || data.message || JSON.stringify(data);
-                } catch (e) {
-                    // Body might be empty or not JSON on 500
-                    errMsg += " (No response body)";
+            // 🛡️ Ensure endpoint ends with /chat/completions if not already
+            if (!endpoint.includes('/chat/completions')) {
+                // If it's ModelScope but missing /v1, add it
+                if (endpoint.includes('modelscope.cn') && !endpoint.includes('/v1')) {
+                    endpoint += '/v1';
                 }
-                console.error("❌ [Stage 2] Agent B API Error:", errMsg);
-                console.warn("⚠️ Agent B API failed, skipping prompt translation (Fallback active).");
-            } else {
-                const data = await res.json();
-                if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
-                    console.error("❌ [Stage 2] Invalid Agent B response - no choices:", data);
-                    console.warn("⚠️ Agent B response invalid, skipping prompt translation.");
+                endpoint += '/chat/completions';
+            }
+
+            // 🛡️ Build request body
+            const agentBRequestBody: any = {
+                model: agentBModel.modelId,
+                messages: [
+                    { role: "system", content: agentBInstruction + "\n\nCRITICAL: OUTPUT RAW JSON ONLY. NO MARKDOWN. NO ```json WRAPPERS." },
+                    { role: "user", content: agentBPrompt }
+                ],
+                temperature: 0.7,
+            };
+
+            // 🛡️ JSON Mode Logic: 
+            // DeepSeek supports JSON mode on OpenAI/DeepSeek API, but ModelScope's implementation is often flaky with it.
+            // So we ONLY enable it for official OpenAI, Azure, and DeepSeek Official API.
+            // We explicitly DISABLE it for ModelScope to avoid 400/500 errors.
+            const isModelScope = agentBModel.provider === 'modelscope' || endpoint.includes('modelscope.cn');
+            const isDeepSeekOfficial = agentBModel.provider === 'openai-compatible' && endpoint.includes('api.deepseek.com');
+
+            const agentBSupportsJsonMode = !isModelScope && (
+                ['openai', 'azure', 'deepseek'].includes(agentBModel.provider?.toLowerCase() || '') ||
+                isDeepSeekOfficial
+            );
+
+            if (agentBSupportsJsonMode) {
+                agentBRequestBody.response_format = { type: "json_object" };
+            }
+
+            console.log(`📡 [Stage 2] Calling Agent B at: ${endpoint}`);
+            console.log(`   - Model: ${agentBModel.modelId}`);
+            console.log(`   - Provider: ${agentBModel.provider}`);
+            console.log(`   - JSON Mode: ${agentBSupportsJsonMode ? 'ENABLED' : 'DISABLED (Relies on Prompt)'}`);
+
+            try {
+                // 🆕 Use smartFetch instead of direct fetch
+                const res = await smartFetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentBModel.apiKey} ` },
+                    body: JSON.stringify(agentBRequestBody)
+                });
+
+                // 🛡️ Handle non-OK responses or empty bodies gracefully
+                if (!res.ok) {
+                    let errMsg = `API Error(${res.status})`;
+                    try {
+                        const data = await res.json();
+                        errMsg = data.error?.message || data.message || JSON.stringify(data);
+                    } catch (e) {
+                        // Body might be empty or not JSON on 500
+                        errMsg += " (No response body)";
+                    }
+                    console.error("❌ [Stage 2] Agent B API Error:", errMsg);
+                    console.warn("⚠️ Agent B API failed, skipping prompt translation (Fallback active).");
                 } else {
-                    executionJsonRaw = data.choices[0]?.message?.content || "{}";
-                    console.log("📝 [Stage 2] Agent B Raw Output:", executionJsonRaw.substring(0, 200) + "...");
-                    executionPrompts = safeJSONParse(executionJsonRaw);
+                    const data = await res.json();
+                    if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+                        console.error("❌ [Stage 2] Invalid Agent B response - no choices:", data);
+                        console.warn("⚠️ Agent B response invalid, skipping prompt translation.");
+                    } else {
+                        executionJsonRaw = data.choices[0]?.message?.content || "{}";
+                        console.log("📝 [Stage 2] Agent B Raw Output:", executionJsonRaw.substring(0, 200) + "...");
+                        executionPrompts = safeJSONParse(executionJsonRaw);
+                    }
                 }
+            } catch (networkError: any) {
+                console.error("❌ [Stage 2] Agent B Network/Parse Error:", networkError.message);
+                console.warn("⚠️ Agent B crashed, skipping prompt translation (Fallback active).");
             }
-        } catch (networkError: any) {
-            console.error("❌ [Stage 2] Agent B Network/Parse Error:", networkError.message);
-            console.warn("⚠️ Agent B crashed, skipping prompt translation (Fallback active).");
+
+            if (!executionPrompts || (!executionPrompts.listing_generation_tasks && !executionPrompts.aplus_generation_tasks)) {
+                console.warn("⚠️ [Stage 2] Agent B output is invalid or empty. Will fall back to Agent A's visual_execution.");
+            }
+        } else {
+            console.warn("⚠️ [Stage 2] Agent B skipped: No model or instruction configured.");
         }
 
-        if (!executionPrompts || (!executionPrompts.listing_generation_tasks && !executionPrompts.aplus_generation_tasks)) {
-            console.warn("⚠️ [Stage 2] Agent B output is invalid or empty. Will fall back to Agent A's visual_execution.");
-        }
-    } else {
-        console.warn("⚠️ [Stage 2] Agent B skipped: No model or instruction configured.");
+        reportProgress('done', '✅ Strategy & Execution Plan Ready!');
+
+        // ==========================================
+        // 🔄 MAPPING & RETURN
+        // ==========================================
+        // We map the new structure back to the legacy one for compatibility if needed, 
+        // OR we just return the new fields and let UI handle it.
+        // The implementation plan says "Combine strategy and execution data".
+
+        // Map to legacy fields for backward compatibility where possible
+        const legacyAnalysis = `### Visual DNA Analysis\n ** Brand Tone:** ${visualStrategy.visual_dna_analysis.brand_tone} \n\n ** Lighting:** ${visualStrategy.visual_dna_analysis.lighting_strategy} `;
+
+        const legacySecondaryImages = (visualStrategy.listing_image_plan || []).map((item: any, idx: number) => {
+            // Find matching execution prompt
+            const exec = executionPrompts?.listing_generation_tasks?.find((t: any) => t.index === item.index);
+            return {
+                id: item.index,
+                type: item.type,
+                description: item.visual_execution, // Correctly map Visual Execution to description
+                visualPrompt: exec?.positive_prompt
+                    ? exec.positive_prompt
+                    : `[FALLBACK PROMPT] /imagine prompt: ${item.visual_execution?.replace(/^\[|\]$/g, '')} --ar 3:4 --styled`, // Clean up brackets if present
+                copywriting: item.english_copy
+            };
+        });
+
+        const legacyAPlus = (visualStrategy.premium_aplus_plan || []).map((item: any, idx: number) => {
+            const exec = executionPrompts?.aplus_generation_tasks?.find((t: any) => t.module === item.module_index);
+            return {
+                id: item.module_index,
+                moduleType: item.module_type,
+                content: item.narrative_goal,
+                visualGuidance: item.visual_description,
+                visualPrompt: exec?.positive_prompt || item.visual_description
+            };
+        });
+
+        return {
+            analysis: legacyAnalysis,
+            secondaryImages: legacySecondaryImages,
+            aPlusContent: legacyAPlus,
+            // New Fields
+            visualStrategy: visualStrategy,
+            executionPrompts: executionPrompts,
+            isError: false
+        };
+
+    } catch (error: any) {
+        console.error("❌ Dual-Agent Generation Failed:", error);
+        return {
+            ...errorFallback,
+            errorMessage: error.message,
+            rawResponse: error.stack
+        };
     }
-
-    reportProgress('done', '✅ Strategy & Execution Plan Ready!');
-
-    // ==========================================
-    // 🔄 MAPPING & RETURN
-    // ==========================================
-    // We map the new structure back to the legacy one for compatibility if needed, 
-    // OR we just return the new fields and let UI handle it.
-    // The implementation plan says "Combine strategy and execution data".
-
-    // Map to legacy fields for backward compatibility where possible
-    const legacyAnalysis = `### Visual DNA Analysis\n ** Brand Tone:** ${visualStrategy.visual_dna_analysis.brand_tone} \n\n ** Lighting:** ${visualStrategy.visual_dna_analysis.lighting_strategy} `;
-
-    const legacySecondaryImages = (visualStrategy.listing_image_plan || []).map((item: any, idx: number) => {
-        // Find matching execution prompt
-        const exec = executionPrompts?.listing_generation_tasks?.find((t: any) => t.index === item.index);
-        return {
-            id: item.index,
-            type: item.type,
-            description: item.visual_execution, // Correctly map Visual Execution to description
-            visualPrompt: exec?.positive_prompt
-                ? exec.positive_prompt
-                : `[FALLBACK PROMPT] /imagine prompt: ${item.visual_execution?.replace(/^\[|\]$/g, '')} --ar 3:4 --styled`, // Clean up brackets if present
-            copywriting: item.english_copy
-        };
-    });
-
-    const legacyAPlus = (visualStrategy.premium_aplus_plan || []).map((item: any, idx: number) => {
-        const exec = executionPrompts?.aplus_generation_tasks?.find((t: any) => t.module === item.module_index);
-        return {
-            id: item.module_index,
-            moduleType: item.module_type,
-            content: item.narrative_goal,
-            visualGuidance: item.visual_description,
-            visualPrompt: exec?.positive_prompt || item.visual_description
-        };
-    });
-
-    return {
-        analysis: legacyAnalysis,
-        secondaryImages: legacySecondaryImages,
-        aPlusContent: legacyAPlus,
-        // New Fields
-        visualStrategy: visualStrategy,
-        executionPrompts: executionPrompts,
-        isError: false
-    };
-
-} catch (error: any) {
-    console.error("❌ Dual-Agent Generation Failed:", error);
-    return {
-        ...errorFallback,
-        errorMessage: error.message,
-        rawResponse: error.stack
-    };
-}
 };
 
 // Removed refinePromptsWithPromptEngineer as it is now Agent B's job.
