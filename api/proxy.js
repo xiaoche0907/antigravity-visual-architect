@@ -35,8 +35,10 @@ export default async function handler(req, res) {
     delete options.headers['content-length'];
     delete options.headers.connection;
     delete options.headers.cookie; // Prevent leaking cookies
-    delete options.headers.origin; // 🛡️ Important: Remove Origin to prevent 403/502 from strict APIs
-    delete options.headers.referer; // 🛡️ Important: Remove Referer
+
+    // 🛡️ Header Spoofing: Pretend to be ModelScope frontend to bypass WAF
+    options.headers.origin = 'https://modelscope.cn';
+    options.headers.referer = 'https://modelscope.cn/';
 
     // Set a clean User-Agent if not present (or override it)
     options.headers['user-agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (HTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
