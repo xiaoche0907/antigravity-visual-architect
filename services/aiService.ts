@@ -492,6 +492,30 @@ export const generateMarketingStrategy = async (
         executionPrompts: undefined
     };
 
+    // 🛡️ Smart Fetch with Proxy Fallback
+    // Attempts dedicated proxy first, falls back to universal proxy on failure
+    const smartFetch = async (endpoint: string, options: any): Promise<Response> => {
+        // 1. Try Dedicated Proxy (Rewrite)
+        const dedicatedUrl = getProxiedUrl(endpoint);
+        console.log(`📡 [SmartFetch] Attempt 1: Dedicated Proxy -> ${dedicatedUrl}`);
+
+        try {
+            const res = await fetch(dedicatedUrl, { ...options });
+            if (res.ok) return res;
+
+            console.warn(`⚠️ [SmartFetch] Dedicated Proxy failed with status ${res.status}. Retrying with Universal Proxy...`);
+        } catch (err: any) {
+            console.warn(`⚠️ [SmartFetch] Dedicated Proxy network error: ${err.message}. Retrying with Universal Proxy...`);
+        }
+
+        // 2. Try Universal Proxy (Function)
+        // Construct universal URL manually ensuring exact format
+        const universalUrl = `/api/proxy?target=${encodeURIComponent(endpoint)}`;
+        console.log(`📡 [SmartFetch] Attempt 2: Universal Proxy -> ${universalUrl}`);
+
+        return fetch(universalUrl, { ...options });
+    };
+
     if (config.mockMode) {
         // ... (Mock logic can be updated later if needed, mostly skipping for now)
         return new Promise((resolve) => setTimeout(() => resolve(errorFallback), 1000));
@@ -580,7 +604,8 @@ export const generateMarketingStrategy = async (
             console.log(`📡 [Stage 1] Calling ${textModel.provider} at ${endpoint} (JSON mode: ${supportsJsonMode})`);
 
             try {
-                const res = await fetch(getProxiedUrl(endpoint), {
+                // 🆕 Use smartFetch instead of direct fetch
+                const res = await smartFetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${textModel.apiKey}` },
                     body: JSON.stringify(requestBody)
@@ -775,15 +800,16 @@ Output a valid JSON object with 'listing_generation_tasks' and 'aplus_generation
             console.log(`   - JSON Mode: ${agentBSupportsJsonMode ? 'ENABLED' : 'DISABLED (Relies on Prompt)'}`);
 
             try {
-                const res = await fetch(getProxiedUrl(endpoint), {
+                // 🆕 Use smartFetch instead of direct fetch
+                const res = await smartFetch(getProxiedUrl(endpoint), {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentBModel.apiKey}` },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${agentBModel.apiKey} ` },
                     body: JSON.stringify(agentBRequestBody)
                 });
 
                 // 🛡️ Handle non-OK responses or empty bodies gracefully
                 if (!res.ok) {
-                    let errMsg = `API Error (${res.status})`;
+                    let errMsg = `API Error(${res.status})`;
                     try {
                         const data = await res.json();
                         errMsg = data.error?.message || data.message || JSON.stringify(data);
@@ -826,7 +852,7 @@ Output a valid JSON object with 'listing_generation_tasks' and 'aplus_generation
         // The implementation plan says "Combine strategy and execution data".
 
         // Map to legacy fields for backward compatibility where possible
-        const legacyAnalysis = `### Visual DNA Analysis\n**Brand Tone:** ${visualStrategy.visual_dna_analysis.brand_tone}\n\n**Lighting:** ${visualStrategy.visual_dna_analysis.lighting_strategy}`;
+        const legacyAnalysis = `### Visual DNA Analysis\n ** Brand Tone:** ${visualStrategy.visual_dna_analysis.brand_tone} \n\n ** Lighting:** ${visualStrategy.visual_dna_analysis.lighting_strategy} `;
 
         const legacySecondaryImages = (visualStrategy.listing_image_plan || []).map((item: any, idx: number) => {
             // Find matching execution prompt
