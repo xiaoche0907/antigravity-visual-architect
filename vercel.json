@@ -1,16 +1,24 @@
 {
     "rewrites": [
         {
-            "source": "/api/proxy/google/:match*",
-            "destination": "https://generativelanguage.googleapis.com/:match*"
+            "source": "/api/proxy/google/:path*",
+            "destination": "https://generativelanguage.googleapis.com/:path*"
         },
         {
-            "source": "/api/proxy/openai/:match*",
-            "destination": "https://api.openai.com/v1/:match*"
+            "source": "/api/proxy/openai/:path*",
+            "destination": "https://api.openai.com/v1/:path*"
         },
         {
-            "source": "/api/proxy/dashscope/:match*",
-            "destination": "https://dashscope.aliyuncs.com/compatible-mode/v1/:match*"
+            "source": "/api/proxy/dashscope/:path*",
+            "destination": "https://dashscope.aliyuncs.com/compatible-mode/v1/:path*"
+        },
+        {
+            "source": "/api/proxy/modelscope/:path*",
+            "destination": "https://api-inference.modelscope.cn/v1/:path*"
+        },
+        {
+            "source": "/api/proxy",
+            "destination": "/api/proxy"
         }
     ]
 }
