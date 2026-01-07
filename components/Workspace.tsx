@@ -353,6 +353,11 @@ const Workspace: React.FC<WorkspaceProps> = ({
             if (strategyData.isError) {
                 throw new Error(strategyData.errorMessage || "策略分析遭遇未知错误");
             }
+            // 🆕 Check for parsing error flag
+            if (strategyData.visualStrategy?._parseError) {
+                showToast('⚠️ 模型输出解析失败，请检查提示词或更换模型');
+                alert('⚠️ 解析警告\n\n模型输出格式无法解析。\n\n可能的原因：\n1. 模型未按要求输出JSON格式\n2. 提示词与模型不兼容\n3. 模型服务暂时不稳定\n\n请尝试：\n- 检查系统提示词格式\n- 更换一个不同的模型\n- 稍后重试');
+            }
 
             setStrategy(strategyData);
             console.log('✅ 策略分析完成。');
@@ -798,8 +803,8 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                 <div className="flex flex-wrap gap-4">
                                                                     {/* Render Swatches */}
                                                                     {(() => {
-                                                                        const rawPalette = strategy.visualStrategy.visual_dna_analysis.color_palette ||
-                                                                            (strategy.visualStrategy.visual_dna_analysis as any).color_palette_hex || "";
+                                                                        const rawPalette = strategy.visualStrategy?.visual_dna_analysis?.color_palette ||
+                                                                            (strategy.visualStrategy?.visual_dna_analysis as any)?.color_palette_hex || "";
                                                                         const hexCodes = rawPalette.match(/#[0-9A-Fa-f]{6}/g) || [];
                                                                         return hexCodes.length > 0 ? hexCodes.map((color, i) => (
                                                                             <div key={i} className="group relative">
@@ -825,7 +830,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                     💡 Lighting Strategy
                                                                 </h4>
                                                                 <p className="text-gray-300 text-sm italic">
-                                                                    "{strategy.visualStrategy.visual_dna_analysis.lighting_strategy}"
+                                                                    "{strategy.visualStrategy?.visual_dna_analysis?.lighting_strategy ?? 'Studio Lighting'}"
                                                                 </p>
                                                             </div>
                                                         </div>
@@ -1005,7 +1010,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                     <span>🎯</span> Strategy Rationale
                                                                 </span>
                                                                 <p className="text-xs text-gray-200 leading-snug">
-                                                                    {strategy.visualStrategy.listing_image_plan.find(p => p.index === img.id)?.strategy_rationale}
+                                                                    {strategy.visualStrategy?.listing_image_plan?.find(p => p.index === img.id)?.strategy_rationale}
                                                                 </p>
                                                             </div>
                                                         )}
@@ -1174,7 +1179,7 @@ const Workspace: React.FC<WorkspaceProps> = ({
                                                                     <span>📖</span> Narrative Goal
                                                                 </span>
                                                                 <p className="text-xs text-gray-200 leading-snug">
-                                                                    {strategy.visualStrategy.premium_aplus_plan.find(p => p.module_index === m.id)?.narrative_goal}
+                                                                    {strategy.visualStrategy?.premium_aplus_plan?.find(p => p.module_index === m.id)?.narrative_goal}
                                                                 </p>
                                                             </div>
                                                         )}
@@ -1242,7 +1247,13 @@ const Workspace: React.FC<WorkspaceProps> = ({
                         <h3 className="font-bold text-white flex items-center"><span className="mr-2">🗂️</span> Project History</h3>
                         <div className="flex items-center gap-3">
                             <button
-                                onClick={() => onDeleteSession('__FORCE_CLEAR_ALL__')}
+                                onClick={() => {
+                                    if (window.confirm("⚠️ 确定要强制清空所有历史记录吗？这可以解决数据卡死的问题。\n页面将会刷新。")) {
+                                        console.log('[Workspace] Force clearing all history...');
+                                        localStorage.removeItem('amz_visual_history_v1');
+                                        window.location.reload();
+                                    }
+                                }}
                                 className="text-[10px] bg-red-900/20 text-red-400 border border-red-900/50 px-2 py-1 rounded hover:bg-red-900/40 transition-colors"
                             >
                                 🧹 强制清理

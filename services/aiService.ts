@@ -96,9 +96,21 @@ const safeJSONParse = (text: string): any => {
 
     console.log("🔍 [safeJSONParse] Input length:", text.length, "First 100 chars:", text.substring(0, 100));
 
+    // 🆕 STEP 0: AGGRESSIVE SANITIZATION of invisible/weird characters
+    // These are the #1 cause of "valid looking JSON that won't parse"
+    let preClean = text
+        .replace(/^\uFEFF/, '') // Remove BOM
+        .replace(/\u0000/g, '') // Remove null bytes
+        .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width spaces
+        .replace(/\u00A0/g, ' ') // Replace non-breaking space with regular space
+        .replace(/[\x00-\x1F\x7F]/g, (char) => { // Replace control characters
+            if (char === '\n' || char === '\r' || char === '\t') return char; // Keep newlines/tabs
+            return ''; // Remove others
+        });
+
     // 0. Pre-process: Try to extract JSON from code blocks first (handles ```json...```)
-    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-    let clean = codeBlockMatch ? codeBlockMatch[1].trim() : text.trim();
+    const codeBlockMatch = preClean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    let clean = codeBlockMatch ? codeBlockMatch[1].trim() : preClean.trim();
 
     // Also strip any remaining ``` that might be malformed
     clean = clean.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -106,6 +118,37 @@ const safeJSONParse = (text: string): any => {
     // 1. Try direct parse
     try {
         return JSON.parse(clean);
+    } catch (e) {
+        // Continue...
+    }
+
+    // 🛡️ Helper to repair common JSON malformations
+    const repairMalformedJSON = (str: string): string => {
+        let fixed = str;
+        // 1. Remove "Phase Separators" like "!, -- PHASE VISUAL DNA" or "---" or Markdown headers
+        // ⚠️ CAREFUL: Don't remove lines that are just commas (valid JSON)
+        // Only remove if line starts with: //, #, --, !!, or similar comment patterns
+        fixed = fixed.replace(/^\s*(\/\/|#|--|!!|[\-]{3,}|={3,}).*$/gm, '');
+
+        // 2. Remove standard comments // (but only AFTER { or : or , to avoid removing URLs)
+        // This is tricky, so we skip inline comments for now to avoid breaking JSON
+
+        // 3. Fix Trailing Commas (matches , followed by closing brace/bracket)
+        fixed = fixed.replace(/,\s*([\]}])/g, '$1');
+
+        // 4. Fix "Unescaped Quotes" inside values is hard, but we can try basic ones
+        // (Skipping complex unescaped quote fix to avoid over-correction)
+
+        return fixed;
+    };
+
+    // 1b. Try parsing REPAIRED string
+    try {
+        const repaired = repairMalformedJSON(clean);
+        if (repaired !== clean) {
+            console.log("🛠️ [safeJSONParse] Attempting to parse REPAIRED string...");
+            return JSON.parse(repaired);
+        }
     } catch (e) {
         // Continue...
     }
@@ -125,6 +168,34 @@ const safeJSONParse = (text: string): any => {
                 return parsed;
             } catch (e) {
                 console.warn("⚠️ [safeJSONParse] Regex match found but parse failed:", (e as Error).message);
+
+                // 🆕 NUCLEAR REPAIR: Fix common JSON errors
+                try {
+                    console.log("🔧 [safeJSONParse] Attempting NUCLEAR REPAIR...");
+                    let nuclear = jsonMatch[0];
+
+                    // Fix 1: Replace single quotes with double quotes (common model error)
+                    // But be careful not to break strings
+                    nuclear = nuclear.replace(/:\s*'([^']*?)'/g, ': "$1"');
+                    nuclear = nuclear.replace(/,\s*'([^']*?)'/g, ', "$1"');
+
+                    // Fix 2: Quote unquoted property names (another common error)
+                    // Match property names that aren't quoted: { foo: or , bar:
+                    nuclear = nuclear.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+
+                    // Fix 3: Remove trailing commas
+                    nuclear = nuclear.replace(/,\s*([\]}])/g, '$1');
+
+                    // Fix 4: Remove invalid backslash escapes
+                    nuclear = nuclear.replace(/\\([^"\\\/bfnrtu])/g, '$1');
+
+                    const parsed = JSON.parse(nuclear);
+                    console.log("✅ [safeJSONParse] NUCLEAR REPAIR SUCCESS!");
+                    return parsed;
+                } catch (nuclearError) {
+                    console.warn("❌ [safeJSONParse] Nuclear repair also failed:", (nuclearError as Error).message);
+                }
+
                 // Continue to more advanced methods...
             }
         } else {
@@ -226,6 +297,45 @@ const safeJSONParse = (text: string): any => {
         return JSON.parse(sanitized);
 
     } catch (e) {
+        // 🆕 FINAL REPAIR ATTEMPT: Try to close unclosed braces (Truncation Repair)
+        try {
+            console.warn("🔧 [safeJSONParse] Attempting Truncation Repair...");
+            let braceCount = 0;
+            let bracketCount = 0;
+            let inStr = false;
+            let escaped = false;
+
+            for (let i = 0; i < text.length; i++) {
+                const c = text[i];
+                if (escaped) { escaped = false; continue; }
+                if (c === '\\') { escaped = true; continue; }
+                if (c === '"') { inStr = !inStr; continue; }
+                if (inStr) continue;
+                if (c === '{') braceCount++;
+                if (c === '}') braceCount--;
+                if (c === '[') bracketCount++;
+                if (c === ']') bracketCount--;
+            }
+
+            // Build closing string
+            let fixedText = text;
+            // Close any unclosed strings (heuristic: if braces are unbalanced and we're "in a string")
+            if (braceCount > 0 || bracketCount > 0) {
+                // Append missing closures
+                for (let i = 0; i < bracketCount; i++) fixedText += ']';
+                for (let i = 0; i < braceCount; i++) fixedText += '}';
+                console.log(`🔧 [safeJSONParse] Added ${bracketCount} ']' and ${braceCount} '}' to repair truncation.`);
+
+                // One more try
+                const jsonMatch = fixedText.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    return JSON.parse(jsonMatch[0]);
+                }
+            }
+        } catch (repairError) {
+            console.error("❌ [safeJSONParse] Truncation repair also failed.");
+        }
+
         console.error("❌ [safeJSONParse] All parsing methods failed:", e);
         console.error("📝 Input text (first 500 chars):", text.substring(0, 500));
         return null;
@@ -239,6 +349,62 @@ const normalizeAgentOutput = (rawData: any): any => {
     if (!rawData) return rawData;
 
     console.log("🔄 [Normalizer] Processing raw data with keys:", Object.keys(rawData));
+
+    // ============================================================
+    // 🦆 FIELD FINDER: Schema-Agnostic Duck Typing Utilities
+    // ============================================================
+    type FieldMatcher = (value: any, key: string) => boolean;
+
+    // Matcher: Looks like Visual DNA Analysis
+    const isDnaLike: FieldMatcher = (v, k) =>
+        v && typeof v === 'object' && !Array.isArray(v) &&
+        (v.brand_tone || v.color_palette || v.lighting_strategy || v.visual_tone || v.primary_color ||
+            k.toLowerCase().includes('dna') || k.toLowerCase().includes('brand') || k.toLowerCase().includes('analysis'));
+
+    // Matcher: Looks like Listing Image Plan (array of image objects)
+    const isListingPlanLike: FieldMatcher = (v, k) =>
+        Array.isArray(v) && v.length > 0 && v[0] && typeof v[0] === 'object' &&
+        (v[0].visual_execution || v[0].index !== undefined || v[0].type || v[0].image_type ||
+            k.toLowerCase().includes('listing') || k.toLowerCase().includes('image'));
+
+    // Matcher: Looks like A+ Content Plan (array with module_type or layout)
+    const isAplusPlanLike: FieldMatcher = (v, k) =>
+        Array.isArray(v) && v.length > 0 && v[0] && typeof v[0] === 'object' &&
+        (v[0].module_type || v[0].Module_Type || v[0].module_index || v[0].layout_type || v[0].Hero_Banner ||
+            k.toLowerCase().includes('aplus') || k.toLowerCase().includes('premium') || k.toLowerCase().includes('module'));
+
+    // Generic Field Finder (Depth 1 search)
+    const findFieldByStructure = (obj: any, matcher: FieldMatcher): any => {
+        if (!obj || typeof obj !== 'object') return null;
+        for (const key of Object.keys(obj)) {
+            const value = obj[key];
+            if (matcher(value, key)) {
+                console.log(`🎯 [FieldFinder] Found match at key '${key}'`);
+                return value;
+            }
+        }
+        return null;
+    };
+
+    // Deep Field Finder (Depth 2 search - enters nested objects)
+    const findFieldByStructureDeep = (obj: any, matcher: FieldMatcher): any => {
+        const shallow = findFieldByStructure(obj, matcher);
+        if (shallow) return shallow;
+
+        // Go one level deeper
+        for (const key of Object.keys(obj)) {
+            const value = obj[key];
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                const deep = findFieldByStructure(value, matcher);
+                if (deep) {
+                    console.log(`🎯 [FieldFinder] Found DEEP match inside '${key}'`);
+                    return deep;
+                }
+            }
+        }
+        return null;
+    };
+    // ============================================================
 
     // 🆕 Helper: Convert Skysper nested objects to display string
     const flattenSkysperFormat = (item: any): string => {
@@ -277,14 +443,16 @@ const normalizeAgentOutput = (rawData: any): any => {
         || rawData.secondary_images
         || rawData.product_images
         || rawData.image_plans
+        || rawData.main_images
         || [];
 
-    // If still empty, search in nested objects
+    // If still empty, search in nested objects (Depth 1)
     if (!listingPlan.length) {
         for (const key of Object.keys(rawData)) {
             const val = rawData[key];
+
+            // Case A: The value IS the array (e.g. { "images": [...] })
             if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
-                // 🆕 SKYSPER FORMAT: Check for visual_composition (object) in addition to visual_execution (string)
                 if (val[0].type || val[0].index !== undefined || val[0].visual_execution ||
                     val[0].visual_composition || val[0].layout_logic || val[0].strategy_rationale) {
                     console.log("🔍 [Normalizer] Found listing plan at key:", key);
@@ -292,6 +460,32 @@ const normalizeAgentOutput = (rawData: any): any => {
                     break;
                 }
             }
+
+            // Case B: The value contains the array (e.g. { "strategy": { "listing_image_plan": [...] } })
+            if (val && typeof val === 'object' && !Array.isArray(val)) {
+                const nestedPlan = val.listing_image_plan
+                    || val.listing_images
+                    || val.image_plan
+                    || val.images
+                    || val.secondary_images
+                    || val.product_images
+                    || val.main_images;
+
+                if (nestedPlan && Array.isArray(nestedPlan) && nestedPlan.length > 0) {
+                    console.log("🔍 [Normalizer] Found listing plan INSIDE key:", key);
+                    listingPlan = nestedPlan;
+                    break;
+                }
+            }
+        }
+    }
+
+    // 🦆 FINAL FALLBACK: Use FieldFinder Duck Typing if Listing Plan STILL not found
+    if (!listingPlan || !listingPlan.length) {
+        const foundListing = findFieldByStructureDeep(rawData, isListingPlanLike);
+        if (foundListing) {
+            console.log("🦆 [Normalizer] Listing Plan found via FieldFinder!");
+            listingPlan = foundListing;
         }
     }
 
@@ -306,7 +500,20 @@ const normalizeAgentOutput = (rawData: any): any => {
             index: item.index ?? index + 1, // 🛡️ Ensure 1-indexed
             // Map ANY logic/directive field to standard 'visual_execution'
             // 🆕 SKYSPER: Use flattened format if available
-            visual_execution: item.visual_execution
+            visual_execution: ((val: any) => {
+                if (!val) return "No visual execution provided";
+                if (typeof val === 'string') return val;
+                if (typeof val === 'object') {
+                    // Try to extract readable parts if it matches known structure
+                    if (val.layout || val.angle || val.background) {
+                        return Object.entries(val)
+                            .map(([k, v]) => `${k}: ${v}`)
+                            .join('\n');
+                    }
+                    return JSON.stringify(val);
+                }
+                return String(val);
+            })(item.visual_execution
                 || skysperFlattened
                 || item.layout_logic
                 || item.design_directive
@@ -314,32 +521,110 @@ const normalizeAgentOutput = (rawData: any): any => {
                 || item.visual_description
                 || item.composition_guide
                 || item.design_concept
-                || item.layout_instruction
-                || "No visual execution provided",
+                || item.layout_instruction),
+
             // Map ANY rationale/strategy field to standard 'strategy_rationale'
-            strategy_rationale: item.strategy_rationale
+            strategy_rationale: ((val: any) => {
+                if (!val) return "No rationale provided";
+                if (typeof val === 'string') return val;
+                if (typeof val === 'object') return JSON.stringify(val);
+                return String(val);
+            })(item.strategy_rationale
                 || item.strategy_reasoning
                 || item.rationale
                 || item.purpose
                 || item.reasoning
-                || "Strategy analysis",
+                || item.strategic_purpose),
         };
     });
 
     // 2. Normalize A+ Content Plan
-    const aplusPlan = rawData.premium_aplus_plan || rawData.aplus_plan || rawData.aplus_content || rawData.a_plus_content || [];
+    let aplusPlan = rawData.premium_aplus_plan || rawData.aplus_plan || rawData.aplus_content || rawData.a_plus_content
+        || rawData.aplus_modules || rawData.premium_content || rawData.modules || [];
+
+    // If empty, search nested objects (Depth 1) & DUCK TYPING SEARCH
+    if (!aplusPlan.length) {
+        for (const key of Object.keys(rawData)) {
+            const val = rawData[key];
+
+            // 1️⃣ Case: Value IS the array (e.g. { "some_weird_key": [...] })
+            if (Array.isArray(val) && val.length > 0) {
+                // Check if items look like A+ modules
+                const sample = val[0];
+                if (sample && typeof sample === 'object') {
+                    if (sample.module_type || sample.Module_Type || sample["Module Type"] || sample.moduleType
+                        || (sample.type && String(sample.type).includes('Banner'))) {
+                        console.log("🔍 [Normalizer] Found A+ plan via Duck Typing at key:", key);
+                        aplusPlan = val;
+                        break;
+                    }
+                }
+            }
+
+            // 2️⃣ Case: Value contains the array (e.g. { "strategy": { "aplus_plan": [...] } })
+            if (val && typeof val === 'object' && !Array.isArray(val)) {
+                // Explicit keys first
+                let nestedAplus = val.premium_aplus_plan || val.aplus_plan || val.aplus_content || val.a_plus_content
+                    || val.aplus_modules || val.premium_content || val.modules;
+
+                // Duck typing deep search
+                if (!nestedAplus) {
+                    for (const subKey of Object.keys(val)) {
+                        const subVal = val[subKey];
+                        if (Array.isArray(subVal) && subVal.length > 0) {
+                            const sample = subVal[0];
+                            if (sample && typeof sample === 'object') {
+                                if (sample.module_type || sample.Module_Type || sample["Module Type"] || sample.moduleType) {
+                                    console.log("🔍 [Normalizer] Found A+ plan via Duck Typing inside:", key, "at", subKey);
+                                    nestedAplus = subVal;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (nestedAplus && Array.isArray(nestedAplus) && nestedAplus.length > 0) {
+                    console.log("🔍 [Normalizer] Found A+ plan INSIDE key:", key);
+                    aplusPlan = nestedAplus;
+                    break;
+                }
+            }
+        }
+    }
+
+    // 🦆 FINAL FALLBACK: Use FieldFinder Duck Typing if A+ Plan STILL not found
+    if (!aplusPlan || !aplusPlan.length) {
+        const foundAplus = findFieldByStructureDeep(rawData, isAplusPlanLike);
+        if (foundAplus) {
+            console.log("🦆 [Normalizer] A+ Plan found via FieldFinder!");
+            aplusPlan = foundAplus;
+        }
+    }
+
     const normalizedAplus = aplusPlan.map((item: any, index: number) => {
         // 🆕 SKYSPER FORMAT: Try to flatten nested objects first
         const skysperFlattened = flattenSkysperFormat(item);
 
-        const desc = item.visual_description
+        const desc = ((val: any) => {
+            if (!val) return "No description";
+            if (typeof val === 'string') return val;
+            if (typeof val === 'object') {
+                if (val.layout || val.background || val.image_content) {
+                    return Object.entries(val)
+                        .map(([k, v]) => `${k}: ${v}`)
+                        .join('\n');
+                }
+                return JSON.stringify(val);
+            }
+            return String(val);
+        })(item.visual_description
             || skysperFlattened
             || item.layout_directive
             || item.layout_logic
             || item.design_directive
             || item.visual_content
-            || item.module_description
-            || "No description";
+            || item.module_description);
 
         return {
             ...item,
@@ -352,8 +637,21 @@ const normalizeAgentOutput = (rawData: any): any => {
     });
 
     // 3. Normalize Visual DNA Analysis (try alternative keys)
+    // 3. Normalize Visual DNA Analysis (try alternative keys)
     let visualDna = rawData.visual_dna_analysis;
+
+    // 🆕 CRITICAL: New prompt uses 'brand_visual_dna' or 'brand_dna'.
+    // Even if 'visual_dna_analysis' exists, check if 'brand_visual_dna' is better
+    if (rawData.brand_visual_dna) {
+        console.log("🔄 [Normalizer] Found brand_visual_dna - Prioritizing it!");
+        visualDna = rawData.brand_visual_dna;
+    } else if (rawData.brand_dna) {
+        console.log("🔄 [Normalizer] Found brand_dna - Prioritizing it!");
+        visualDna = rawData.brand_dna;
+    }
+
     if (!visualDna) {
+        // 🆕 Added 'brand_dna' to support models that output this key
         const altKeys = ['analysis', 'strategy', 'visual_strategy', 'dna_analysis', 'brand_analysis', 'visual_analysis'];
         for (const key of altKeys) {
             if (rawData[key]) {
@@ -364,16 +662,102 @@ const normalizeAgentOutput = (rawData: any): any => {
         }
     }
 
+    // 🦆 FINAL FALLBACK: Use FieldFinder Duck Typing if STILL not found
+    if (!visualDna) {
+        visualDna = findFieldByStructureDeep(rawData, isDnaLike);
+        if (visualDna) {
+            console.log("🦆 [Normalizer] Visual DNA found via FieldFinder!");
+        }
+    }
+
     // 🆕 SKYSPER FORMAT: Normalize visual_dna_analysis fields
     if (visualDna) {
         // Map brand_standard to brand_tone if missing
         if (!visualDna.brand_tone && visualDna.brand_standard) {
             visualDna.brand_tone = visualDna.brand_standard;
         }
-        // Map visual_strategy to lighting_strategy if missing (as a fallback)
+
+        // Map visual_strategy or technical_defaults to lighting_strategy if missing
+        if (!visualDna.lighting_strategy) {
+            if (visualDna.visual_strategy) {
+                visualDna.lighting_strategy = visualDna.visual_strategy;
+            } else if (rawData.technical_defaults && rawData.technical_defaults.lighting_base) {
+                // 🆕 New prompt format puts lighting in technical_defaults
+                visualDna.lighting_strategy = rawData.technical_defaults.lighting_base;
+            }
+        }
+
+        // 🆕 New Prompt Mapping: visual_tone -> brand_tone
+        if (!visualDna.brand_tone && visualDna.visual_tone) {
+            visualDna.brand_tone = Array.isArray(visualDna.visual_tone)
+                ? visualDna.visual_tone.join(', ')
+                : visualDna.visual_tone;
+        }
+
+        // 🆕 Normalize brand_tone (Convert array to string if needed)
+        if (Array.isArray(visualDna.brand_tone)) {
+            visualDna.brand_tone = visualDna.brand_tone.join(', ');
+        }
+
+        // 🆕 New Prompt Mapping: primary_color object -> color_palette string
+        if (!visualDna.color_palette && visualDna.primary_color) {
+            if (typeof visualDna.primary_color === 'object') {
+                const p = visualDna.primary_color;
+                visualDna.color_palette = p.hex || p.name || JSON.stringify(p);
+                // Try to append secondary if available
+                if (visualDna.secondary_color && typeof visualDna.secondary_color === 'object') {
+                    const s = visualDna.secondary_color;
+                    visualDna.color_palette += `, ${s.hex || s.name}`;
+                }
+            }
+        }
+
+        // 🦆 LAST RESORT DUCK TYPING: If fields are STILL missing, scan all keys
+        if (!visualDna.brand_tone || !visualDna.color_palette || !visualDna.lighting_strategy) {
+            console.log("🦆 [Normalizer] Missing DNA fields, starting Deep Duck Search...");
+            const allValues = Object.values(visualDna);
+
+            // Search for Tone (Array of strings)
+            if (!visualDna.brand_tone) {
+                const toneCandidate = allValues.find(v => Array.isArray(v) && v.length > 0 && typeof v[0] === 'string');
+                if (toneCandidate) {
+                    visualDna.brand_tone = (toneCandidate as string[]).join(', ');
+                    console.log("🦆 [Normalizer] Duck-typed Brand Tone:", visualDna.brand_tone);
+                }
+            }
+
+            // Search for Color (String starting with # or Object with hex)
+            if (!visualDna.color_palette) {
+                const colorObj = allValues.find(v => v && typeof v === 'object' && ((v as any).hex || (v as any).color));
+                if (colorObj) {
+                    const c = colorObj as any;
+                    visualDna.color_palette = c.hex || c.color || JSON.stringify(c);
+                    console.log("🦆 [Normalizer] Duck-typed Color:", visualDna.color_palette);
+                }
+            }
+
+            // Search for Lighting (Long string > 50 chars that isn't the tone)
+            if (!visualDna.lighting_strategy) {
+                const lightingCandidate = allValues.find(v => typeof v === 'string' && v.length > 50 && v !== visualDna.brand_tone);
+                if (lightingCandidate) {
+                    visualDna.lighting_strategy = lightingCandidate as string;
+                    console.log("🦆 [Normalizer] Duck-typed Lighting:", visualDna.lighting_strategy);
+                }
+            }
+        }
         if (!visualDna.lighting_strategy && visualDna.visual_strategy) {
             visualDna.lighting_strategy = visualDna.visual_strategy;
         }
+
+        // 🆕 Map primary/secondary colors to color_palette if missing
+        if (!visualDna.color_palette) {
+            if (visualDna.primary_color && visualDna.secondary_color) {
+                visualDna.color_palette = `${visualDna.primary_color}, ${visualDna.secondary_color}`;
+            } else if (visualDna.primary_color) {
+                visualDna.color_palette = visualDna.primary_color;
+            }
+        }
+
         // Ensure required fields exist
         visualDna.brand_tone = visualDna.brand_tone || visualDna.typography_system || "Brand Tone";
         visualDna.lighting_strategy = visualDna.lighting_strategy || "Studio Lighting";
@@ -392,8 +776,12 @@ const normalizeAgentOutput = (rawData: any): any => {
 
     // 🆕 Debug: Log first item to verify structure
     if (result.listing_image_plan.length > 0) {
+        let debugVisual = result.listing_image_plan[0].visual_execution;
+        if (typeof debugVisual === 'object') {
+            debugVisual = JSON.stringify(debugVisual);
+        }
         console.log("🔍 [Normalizer] First listing item visual_execution:",
-            result.listing_image_plan[0].visual_execution?.substring(0, 100));
+            typeof debugVisual === 'string' ? debugVisual.substring(0, 100) : debugVisual);
     }
 
     return result;
@@ -492,28 +880,89 @@ export const generateMarketingStrategy = async (
         executionPrompts: undefined
     };
 
-    // 🛡️ Smart Fetch with Proxy Fallback
+    // 🛡️ Smart Fetch with Proxy Fallback and Timeout
     // Attempts dedicated proxy first, falls back to universal proxy on failure
     const smartFetch = async (endpoint: string, options: any): Promise<Response> => {
-        // 1. Try Dedicated Proxy (Rewrite)
-        const dedicatedUrl = getProxiedUrl(endpoint);
-        console.log(`📡 [SmartFetch] Attempt 1: Dedicated Proxy -> ${dedicatedUrl}`);
+        // 🆕 Retry configuration for handling 500 errors
+        const MAX_RETRIES = 3;
+        const INITIAL_DELAY_MS = 1000; // Start with 1 second delay
+
+        const attemptFetch = async (url: string, fetchOptions: any, attempt: number): Promise<Response> => {
+            try {
+                const res = await fetch(url, fetchOptions);
+
+                // 🆕 Handle 5xx errors with retry
+                if (res.status >= 500 && attempt < MAX_RETRIES) {
+                    const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1); // Exponential backoff
+                    console.warn(`⚠️ [SmartFetch] Server error ${res.status}. Retry ${attempt}/${MAX_RETRIES} after ${delay}ms...`);
+                    await new Promise(r => setTimeout(r, delay));
+                    return attemptFetch(url, fetchOptions, attempt + 1);
+                }
+
+                return res;
+            } catch (err: any) {
+                // Retry network errors too
+                if (attempt < MAX_RETRIES && err.name !== 'AbortError') {
+                    const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+                    console.warn(`⚠️ [SmartFetch] Network error. Retry ${attempt}/${MAX_RETRIES} after ${delay}ms...`);
+                    await new Promise(r => setTimeout(r, delay));
+                    return attemptFetch(url, fetchOptions, attempt + 1);
+                }
+                throw err;
+            }
+        };
+
+        // 🆕 Add generic timeout (600s - 10 mins) to prevent premature aborts on large prompts
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort("Timeout"), 600000);
+        const fetchOptions = { ...options, signal: controller.signal };
 
         try {
-            const res = await fetch(dedicatedUrl, { ...options });
-            if (res.ok) return res;
+            // 1. Try Dedicated Proxy (Rewrite)
+            const dedicatedUrl = getProxiedUrl(endpoint);
+            console.log(`📡 [SmartFetch] Attempt 1: Dedicated Proxy -> ${dedicatedUrl}`);
 
-            console.warn(`⚠️ [SmartFetch] Dedicated Proxy failed with status ${res.status}. Retrying with Universal Proxy...`);
-        } catch (err: any) {
-            console.warn(`⚠️ [SmartFetch] Dedicated Proxy network error: ${err.message}. Retrying with Universal Proxy...`);
+            try {
+                const res = await attemptFetch(dedicatedUrl, fetchOptions, 1);
+                clearTimeout(timeoutId); // Success, clear timeout
+                if (res.ok) return res;
+
+                console.warn(`⚠️ [SmartFetch] Dedicated Proxy failed with status ${res.status}. Retrying with Universal Proxy...`);
+            } catch (err: any) {
+                // Check for timeout specifically
+                if (err.name === 'AbortError' || err === 'Timeout') {
+                    console.error("❌ [SmartFetch] Request Timed Out (Dedicated Proxy)");
+                    throw new Error("Request Timed Out (Native)");
+                }
+                console.warn(`⚠️ [SmartFetch] Dedicated Proxy network error: ${err.message}. Retrying with Universal Proxy...`);
+            }
+
+            // 2. Try Universal Proxy (Function)
+            // Construct universal URL manually ensuring exact format
+            const universalUrl = `/api/proxy?target=${encodeURIComponent(endpoint)}`;
+            console.log(`📡 [SmartFetch] Attempt 2: Universal Proxy -> ${universalUrl}`);
+
+            // Create NEW controller/timeout for retry
+            const retryController = new AbortController();
+            const retryTimeoutId = setTimeout(() => retryController.abort("Timeout"), 600000);
+
+            try {
+                const res = await attemptFetch(universalUrl, { ...options, signal: retryController.signal }, 1);
+                clearTimeout(retryTimeoutId);
+                return res;
+            } catch (err: any) {
+                clearTimeout(retryTimeoutId);
+                if (err.name === 'AbortError' || err === 'Timeout') {
+                    console.error("❌ [SmartFetch] Request Timed Out (Universal Proxy)");
+                    throw new Error("Request Timed Out (Universal)");
+                }
+                throw err;
+            }
+
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
         }
-
-        // 2. Try Universal Proxy (Function)
-        // Construct universal URL manually ensuring exact format
-        const universalUrl = `/api/proxy?target=${encodeURIComponent(endpoint)}`;
-        console.log(`📡 [SmartFetch] Attempt 2: Universal Proxy -> ${universalUrl}`);
-
-        return fetch(universalUrl, { ...options });
     };
 
     if (config.mockMode) {
@@ -658,7 +1107,9 @@ export const generateMarketingStrategy = async (
         // 🛡️ FALLBACK: If parsing failed or structure is invalid, create a usable error state
         if (!visualStrategy) {
             console.error("❌ [Stage 1] JSON parsing completely failed. Raw:", strategyJsonRaw.substring(0, 500));
+            // 🆕 Set _parseError flag so UI knows this is an error state
             visualStrategy = {
+                _parseError: true, // Flag for UI to detect
                 visual_dna_analysis: {
                     brand_tone: "⚠️ Parsing Error - Model output could not be parsed. Check console for details.",
                     color_palette: "#FF6B6B",
@@ -743,18 +1194,20 @@ Your task is to convert the following Visual Strategy JSON into executable image
 ${agentAOutputString}
 === END OF STRATEGY JSON ===
 
-IMPORTANT: The JSON may use different field names depending on the version. 
-Look for ANY of these visual instruction fields and convert them to prompts:
-- 'visual_execution', 'composition_guide', 'design_concept', 
-- 'design_layout_instruction', 'visual_description', 'layout_instruction'
+IMPORTANT INSTRUCTIONS:
+1. The input 'Visual Strategy' likely contains detailed visual descriptions.
+2. The field 'visual_execution' might be a simple string OR a stringified JSON object (e.g., "{'layout': '...', 'angle': '...'}").
+3. You must EXTRACT the core visual elements (Subject, Environment, Lighting, Angle, Composition) regardless of the format.
+4. If 'visual_execution' is a complex object, synthesize all its values into a coherent 'positive_prompt'.
 
-FOR EACH visual instruction found in 'listing_image_plan' (or similar arrays), generate:
+TASK:
+FOR EACH logic item found in 'listing_image_plan' (or similar arrays), generate:
 - 'index': matching the original item's index
-- 'positive_prompt': Detailed English prompt for image generation (style, lighting, composition, subject)
-- 'negative_prompt': What to avoid
-- 'layout_tags': Relevant tags
+- 'positive_prompt': Detailed English prompt for Midjourney (v6 style), focusing on photorealism, lighting, and composition. Include technical keywords (e.g. "8k", "photorealistic", "octane render").
+- 'negative_prompt': What to avoid (e.g. "text, watermark, blurry, deformed").
+- 'layout_tags': Relevant tags as CSV.
 
-FOR EACH visual instruction in 'premium_aplus_plan' (or similar), generate:
+FOR EACH module in 'premium_aplus_plan' (or similar), generate:
 - 'module': matching the original module_index
 - 'positive_prompt', 'negative_prompt', 'layout_tags'
 

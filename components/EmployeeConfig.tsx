@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppConfig, PromptPreset } from '../types';
 import { ModelConfig } from '../types/models';
-import { DEFAULT_SYSTEM_INSTRUCTION, PROMPT_ENGINEER_SYSTEM_INSTRUCTION } from '../constants';
+import { DEFAULT_SYSTEM_INSTRUCTION, PROMPT_ENGINEER_SYSTEM_INSTRUCTION, FULL_CATEGORY_STRATEGY_INSTRUCTION, FULL_CATEGORY_VISUAL_INSTRUCTION, AB_CUSTOM_V2_AGENT_A, AB_CUSTOM_V2_AGENT_B } from '../constants';
 
 interface EmployeeConfigProps {
     config: AppConfig;
@@ -73,6 +73,38 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
         createdAt: Date.now()
     });
 
+    const createFullCategoryBrainPreset = (): PromptPreset => ({
+        id: 'full-category-brain',
+        name: '🔧 A-B 通用2 (官方固定版)',
+        content: FULL_CATEGORY_STRATEGY_INSTRUCTION,
+        isDefault: true,
+        createdAt: Date.now()
+    });
+
+    const createAbCustomV2AgentAPreset = (): PromptPreset => ({
+        id: 'ab-custom-v2-a',
+        name: '🔧 A-B 通用2 (自定义)',
+        content: AB_CUSTOM_V2_AGENT_A,
+        isDefault: true,
+        createdAt: Date.now()
+    });
+
+    const createFullCategoryPePreset = (): PromptPreset => ({
+        id: 'full-category-pe',
+        name: '🔧 A-B 通用2 (官方固定版)',
+        content: FULL_CATEGORY_VISUAL_INSTRUCTION,
+        isDefault: true,
+        createdAt: Date.now()
+    });
+
+    const createAbCustomV2AgentBPreset = (): PromptPreset => ({
+        id: 'ab-custom-v2-b',
+        name: '🔧 A-B 通用2 (自定义)',
+        content: AB_CUSTOM_V2_AGENT_B,
+        isDefault: true,
+        createdAt: Date.now()
+    });
+
     // 过滤可用的模型配置
     const enabledTextModels = modelConfigs.filter(m => m.category === 'text' && m.isEnabled);
     const enabledImageModels = modelConfigs.filter(m => m.category === 'image' && m.isEnabled);
@@ -82,7 +114,7 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
         // ===== 加载预设列表 =====
         const savedBrainPresets = localStorage.getItem(LOCALSTORAGE_BRAIN_PRESETS_KEY);
         const savedPePresets = localStorage.getItem(LOCALSTORAGE_PE_PRESETS_KEY);
-        
+
         // 初始化大脑预设列表
         if (savedBrainPresets) {
             const parsed = JSON.parse(savedBrainPresets) as PromptPreset[];
@@ -90,9 +122,25 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
             if (!parsed.find(p => p.id === 'default-brain')) {
                 parsed.unshift(createDefaultBrainPreset());
             }
+            // 确保全品类预设存在
+            if (!parsed.find(p => p.id === 'full-category-brain')) {
+                // 插入到第二个位置 (默认之后)
+                parsed.splice(1, 0, createFullCategoryBrainPreset());
+            } else {
+                // 强制更新内容以同步最新常量
+                const idx = parsed.findIndex(p => p.id === 'full-category-brain');
+                if (idx !== -1) parsed[idx] = createFullCategoryBrainPreset();
+            }
+            // 确保 A-B通用2自定义预设存在
+            if (!parsed.find(p => p.id === 'ab-custom-v2-a')) {
+                parsed.splice(2, 0, createAbCustomV2AgentAPreset());
+            } else {
+                const idx = parsed.findIndex(p => p.id === 'ab-custom-v2-a');
+                if (idx !== -1) parsed[idx] = createAbCustomV2AgentAPreset();
+            }
             setBrainPresets(parsed);
         } else {
-            setBrainPresets([createDefaultBrainPreset()]);
+            setBrainPresets([createDefaultBrainPreset(), createFullCategoryBrainPreset(), createAbCustomV2AgentAPreset()]);
         }
 
         // 初始化PE预设列表
@@ -101,9 +149,24 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
             if (!parsed.find(p => p.id === 'default-pe')) {
                 parsed.unshift(createDefaultPePreset());
             }
+            // 确保全品类预设存在
+            if (!parsed.find(p => p.id === 'full-category-pe')) {
+                parsed.splice(1, 0, createFullCategoryPePreset());
+            } else {
+                // 强制更新内容
+                const idx = parsed.findIndex(p => p.id === 'full-category-pe');
+                if (idx !== -1) parsed[idx] = createFullCategoryPePreset();
+            }
+            // 确保 A-B通用2自定义预设存在
+            if (!parsed.find(p => p.id === 'ab-custom-v2-b')) {
+                parsed.splice(2, 0, createAbCustomV2AgentBPreset());
+            } else {
+                const idx = parsed.findIndex(p => p.id === 'ab-custom-v2-b');
+                if (idx !== -1) parsed[idx] = createAbCustomV2AgentBPreset();
+            }
             setPePresets(parsed);
         } else {
-            setPePresets([createDefaultPePreset()]);
+            setPePresets([createDefaultPePreset(), createFullCategoryPePreset(), createAbCustomV2AgentBPreset()]);
         }
 
         // 加载选中的预设ID
@@ -227,7 +290,7 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
     };
 
     // ========== 预设管理函数 ==========
-    
+
     // 保存预设列表到 localStorage
     const saveBrainPresetsToStorage = (presets: PromptPreset[]) => {
         localStorage.setItem(LOCALSTORAGE_BRAIN_PRESETS_KEY, JSON.stringify(presets));
@@ -467,7 +530,7 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
                                             </option>
                                         ))}
                                     </select>
-                                    
+
                                     {/* 删除预设按钮 */}
                                     {selectedBrainPresetId && !brainPresets.find(p => p.id === selectedBrainPresetId)?.isDefault && (
                                         <button
@@ -478,7 +541,7 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
                                             🗑️
                                         </button>
                                     )}
-                                    
+
                                     {/* 保存为新预设按钮 */}
                                     {!showBrainPresetInput ? (
                                         <button
@@ -627,7 +690,7 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
                                             </option>
                                         ))}
                                     </select>
-                                    
+
                                     {/* 删除预设按钮 */}
                                     {selectedPePresetId && !pePresets.find(p => p.id === selectedPePresetId)?.isDefault && (
                                         <button
@@ -638,7 +701,7 @@ const EmployeeConfig: React.FC<EmployeeConfigProps> = ({
                                             🗑️
                                         </button>
                                     )}
-                                    
+
                                     {/* 保存为新预设按钮 */}
                                     {!showPePresetInput ? (
                                         <button

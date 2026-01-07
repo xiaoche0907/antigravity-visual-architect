@@ -29,12 +29,12 @@ export interface AppConfig {
   };
   visual: {
     provider:
-      | "modelscope"
-      | "google"
-      | "openai"
-      | "custom"
-      | "gemini"
-      | "grsai";
+    | "modelscope"
+    | "google"
+    | "openai"
+    | "custom"
+    | "gemini"
+    | "grsai";
     model: string;
     baseUrl: string;
     useSameKeyAsBrain: boolean;
@@ -126,6 +126,7 @@ export interface PromptPreset {
 // === New V7.0 Dual-Agent Interfaces ===
 
 export interface VisualStrategy {
+  _parseError?: boolean; // Flag indicating JSON parsing failed
   visual_dna_analysis: {
     brand_tone: string;
     color_palette: string; // Renamed from color_palette_hex
