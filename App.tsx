@@ -127,20 +127,73 @@ const App: React.FC = () => {
 
   // --- ACTIONS ---
   const addToHistory = () => {
+    // 🛡️ 修复：如果没有策略数据且没有产品图片，则不允许保存
     if (!strategy && input.productImages.length === 0) return false;
 
-    const newSession: HistorySession = {
-      id: Date.now().toString(),
-      timestamp: Date.now(),
-      title: input.usps ? input.usps.slice(0, 15) + '...' : `Project ${new Date().toLocaleTimeString()}`,
-      thumbnail: input.productImages[0] || (strategy?.secondaryImages[0]?.generatedImageUrl) || undefined,
-      input: JSON.parse(JSON.stringify(input)),
-      strategy: strategy ? JSON.parse(JSON.stringify(strategy)) : null,
-      mode,
-      roleFocus
-    };
-    setHistory(prev => [newSession, ...prev]);
-    return true;
+    try {
+      // 🛡️ 安全获取缩略图：优先使用产品图片，否则尝试从策略中获取
+      let thumbnail: string | undefined = input.productImages[0];
+      if (!thumbnail && strategy?.secondaryImages && strategy.secondaryImages.length > 0) {
+        const firstImage = strategy.secondaryImages[0];
+        if (firstImage?.generatedImageUrl && !firstImage.generatedImageUrl.startsWith('PENDING:') && !firstImage.generatedImageUrl.startsWith('ERROR:')) {
+          thumbnail = firstImage.generatedImageUrl;
+        }
+      }
+
+      // 🛡️ 安全序列化：使用 try-catch 包装 JSON 操作，防止循环引用等问题导致崩溃
+      let serializedInput: ProductInput;
+      let serializedStrategy: MarketingStrategy | null = null;
+
+      try {
+        serializedInput = JSON.parse(JSON.stringify(input));
+      } catch (inputError) {
+        console.error('[addToHistory] Failed to serialize input:', inputError);
+        // 创建一个简化版本的 input
+        serializedInput = {
+          productImages: [],
+          styleReferences: [],
+          usps: input.usps || '',
+          targetAudience: input.targetAudience || '',
+          competitorPainPoints: input.competitorPainPoints || '',
+          specs: input.specs || ''
+        };
+      }
+
+      try {
+        if (strategy) {
+          serializedStrategy = JSON.parse(JSON.stringify(strategy));
+        }
+      } catch (strategyError) {
+        console.error('[addToHistory] Failed to serialize strategy:', strategyError);
+        // 创建一个简化版本的 strategy，保留关键信息
+        serializedStrategy = {
+          analysis: strategy?.analysis || 'Serialization Error',
+          secondaryImages: [],
+          aPlusContent: [],
+          isError: true,
+          errorMessage: 'Failed to serialize strategy data'
+        };
+      }
+
+      const newSession: HistorySession = {
+        id: Date.now().toString(),
+        timestamp: Date.now(),
+        title: input.usps ? input.usps.slice(0, 15) + '...' : `Project ${new Date().toLocaleTimeString()}`,
+        thumbnail,
+        input: serializedInput,
+        strategy: serializedStrategy,
+        mode,
+        roleFocus
+      };
+
+      setHistory(prev => [newSession, ...prev]);
+      console.log('[addToHistory] Session saved successfully:', newSession.id);
+      return true;
+
+    } catch (error) {
+      console.error('[addToHistory] Unexpected error during save:', error);
+      return false;
+    }
   };
 
   const restoreSession = (session: HistorySession) => {
